@@ -1,0 +1,3 @@
+backend/.env
+frontend/.tmp-*
+frontend/dist/
