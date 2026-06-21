@@ -16,7 +16,7 @@
   -webkit-text-fill-color: var(--color-ink);
 }
 
-.lumi-wrap {
+.mixi-wrap {
   position: relative;
   display: flex;
   width: min(100%, 430px);
@@ -26,7 +26,7 @@
   pointer-events: none;
 }
 
-.lumi-data-stream {
+.mixi-data-stream {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -37,34 +37,34 @@
   transform: translate(-50%, -50%);
 }
 
-.lumi-stream-lane {
+.mixi-stream-lane {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
 }
 
-.lumi-stream-memory {
+.mixi-stream-memory {
   transform: rotate(-42deg);
   --card-rotate: 42deg;
 }
 
-.lumi-stream-knowledge {
+.mixi-stream-knowledge {
   transform: rotate(24deg);
   --card-rotate: -24deg;
 }
 
-.lumi-stream-reasoning {
+.mixi-stream-reasoning {
   transform: rotate(138deg);
   --card-rotate: -138deg;
 }
 
-.lumi-stream-tools {
+.mixi-stream-tools {
   transform: rotate(208deg);
   --card-rotate: -208deg;
 }
 
-.lumi-ability-card {
+.mixi-ability-card {
   position: absolute;
   left: 0;
   top: 0;
@@ -81,31 +81,31 @@
   font-size: 12px;
   font-weight: 700;
   box-shadow: var(--shadow-sm);
-  animation: lumi-absorb 6.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: mixi-absorb 6.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   will-change: transform, opacity, filter;
 }
 
-.lumi-stream-memory .lumi-ability-card {
+.mixi-stream-memory .mixi-ability-card {
   animation-delay: 0s;
   color: oklch(52% 0.16 305);
 }
 
-.lumi-stream-knowledge .lumi-ability-card {
+.mixi-stream-knowledge .mixi-ability-card {
   animation-delay: 1.6s;
   color: oklch(48% 0.14 275);
 }
 
-.lumi-stream-reasoning .lumi-ability-card {
+.mixi-stream-reasoning .mixi-ability-card {
   animation-delay: 3.2s;
   color: oklch(60% 0.15 80);
 }
 
-.lumi-stream-tools .lumi-ability-card {
+.mixi-stream-tools .mixi-ability-card {
   animation-delay: 4.8s;
   color: oklch(52% 0.14 245);
 }
 
-.lumi-particle {
+.mixi-particle {
   position: absolute;
   left: 0;
   top: 0;
@@ -114,34 +114,34 @@
   border-radius: 999px;
   background: oklch(72% 0.14 230);
   box-shadow: 0 0 14px currentColor;
-  animation: lumi-absorb-particle 6.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: mixi-absorb-particle 6.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-.lumi-particle-a {
+.mixi-particle-a {
   color: oklch(62% 0.16 305);
   --particle-angle: -14deg;
   animation-delay: 0.7s;
 }
 
-.lumi-particle-b {
+.mixi-particle-b {
   color: oklch(58% 0.15 275);
   --particle-angle: 62deg;
   animation-delay: 2.3s;
 }
 
-.lumi-particle-c {
+.mixi-particle-c {
   color: oklch(68% 0.16 80);
   --particle-angle: 172deg;
   animation-delay: 3.9s;
 }
 
-.lumi-particle-d {
+.mixi-particle-d {
   color: oklch(56% 0.15 245);
   --particle-angle: 248deg;
   animation-delay: 5.5s;
 }
 
-.lumi-orbit {
+.mixi-orbit {
   position: absolute;
   inset: auto auto 72px 50%;
   width: 270px;
@@ -149,19 +149,19 @@
   transform: translateX(-50%);
 }
 
-.lumi-ring {
+.mixi-ring {
   position: absolute;
   inset: 0;
   border-radius: 999px;
   border: 1px solid oklch(70% 0.13 230 / 0.2);
 }
 
-.lumi-ring-one {
+.mixi-ring-one {
   background: oklch(72% 0.13 230 / 0.08);
   filter: blur(8px);
 }
 
-.lumi-body {
+.mixi-body {
   position: relative;
   z-index: 3;
   display: flex;
@@ -176,34 +176,34 @@
   box-shadow: var(--shadow-md);
   cursor: pointer;
   pointer-events: auto;
-  animation: lumi-float 4.8s ease-in-out infinite;
+  animation: mixi-float 4.8s ease-in-out infinite;
   transition:
     box-shadow 180ms ease,
     transform 180ms ease;
 }
 
-.lumi-body:hover {
+.mixi-body:hover {
   box-shadow: 0 18px 38px oklch(18% 0.03 255 / 0.18);
 }
 
-.lumi-body:focus,
-.lumi-body:focus-visible {
+.mixi-body:focus,
+.mixi-body:focus-visible {
   outline: none;
 }
 
-.lumi-body-poked {
-  animation: lumi-poke-bounce 720ms cubic-bezier(0.22, 1, 0.36, 1);
+.mixi-body-poked {
+  animation: mixi-poke-bounce 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.lumi-body-success {
-  animation: lumi-success-settle 760ms cubic-bezier(0.22, 1, 0.36, 1);
+.mixi-body-success {
+  animation: mixi-success-settle 760ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.lumi-body-error {
-  animation: lumi-error-settle 520ms cubic-bezier(0.22, 1, 0.36, 1);
+.mixi-body-error {
+  animation: mixi-error-settle 520ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.lumi-antenna {
+.mixi-antenna {
   position: absolute;
   top: -40px;
   left: 50%;
@@ -213,21 +213,21 @@
   transform: translateX(-50%);
 }
 
-.lumi-antenna::after {
+.mixi-antenna::after {
   content: '';
   width: 2px;
   height: 30px;
   background: var(--color-border-strong);
 }
 
-.lumi-antenna span {
+.mixi-antenna span {
   width: 12px;
   height: 12px;
   border-radius: 999px;
   box-shadow: 0 0 0 5px oklch(100% 0 0 / 0.7);
 }
 
-.lumi-face {
+.mixi-face {
   display: flex;
   width: 170px;
   height: 100px;
@@ -241,7 +241,7 @@
   box-shadow: inset 0 1px 14px oklch(0% 0 0 / 0.25);
 }
 
-.lumi-eye {
+.mixi-eye {
   display: block;
   border-radius: 999px;
   background: oklch(72% 0.14 230);
@@ -252,22 +252,22 @@
     transform 120ms ease-out;
 }
 
-.lumi-eye-poked {
+.mixi-eye-poked {
   background: oklch(78% 0.17 210);
   box-shadow: 0 0 24px oklch(78% 0.17 210 / 0.84);
 }
 
-.lumi-eye-success {
+.mixi-eye-success {
   background: oklch(80% 0.16 185);
   box-shadow: 0 0 24px oklch(80% 0.16 185 / 0.88);
 }
 
-.lumi-eye-error {
+.mixi-eye-error {
   background: oklch(72% 0.17 25);
   box-shadow: 0 0 18px oklch(72% 0.17 25 / 0.64);
 }
 
-.lumi-hand {
+.mixi-hand {
   position: absolute;
   bottom: 32px;
   width: 38px;
@@ -283,53 +283,53 @@
     transform 220ms ease;
 }
 
-.lumi-hand-left {
+.mixi-hand-left {
   left: -16px;
   transform: rotate(18deg);
 }
 
-.lumi-hand-right {
+.mixi-hand-right {
   right: -16px;
   transform: rotate(-18deg);
 }
 
-.lumi-hand-peek-left {
+.mixi-hand-peek-left {
   left: 16px;
   bottom: 66px;
   transform: rotate(24deg);
 }
 
-.lumi-hand-peek-right {
+.mixi-hand-peek-right {
   right: 28px;
   bottom: 78px;
   transform: rotate(-34deg);
 }
 
-.lumi-hand-cheer-left {
+.mixi-hand-cheer-left {
   left: 28px;
   bottom: 104px;
   transform: rotate(-18deg);
 }
 
-.lumi-hand-cheer-right {
+.mixi-hand-cheer-right {
   right: 28px;
   bottom: 104px;
   transform: rotate(18deg);
 }
 
-.lumi-hand-rest-left {
+.mixi-hand-rest-left {
   left: -6px;
   bottom: 24px;
   transform: rotate(8deg);
 }
 
-.lumi-hand-rest-right {
+.mixi-hand-rest-right {
   right: -6px;
   bottom: 24px;
   transform: rotate(-8deg);
 }
 
-.lumi-status {
+.mixi-status {
   position: absolute;
   bottom: 34px;
   left: 50%;
@@ -352,14 +352,14 @@
     box-shadow 180ms ease;
 }
 
-.lumi-status span {
+.mixi-status span {
   width: 8px;
   height: 8px;
   border-radius: 999px;
 }
 
-.lumi-status-poked {
-  animation: lumi-status-hop 640ms cubic-bezier(0.22, 1, 0.36, 1);
+.mixi-status-poked {
+  animation: mixi-status-hop 640ms cubic-bezier(0.22, 1, 0.36, 1);
   border-color: oklch(84% 0.07 215 / 0.95);
   background: oklch(98% 0.02 215 / 0.94);
   color: oklch(40% 0.08 230);
@@ -368,7 +368,7 @@
     0 0 0 1px oklch(88% 0.05 215 / 0.75);
 }
 
-.lumi-status-success {
+.mixi-status-success {
   border-color: oklch(86% 0.07 170 / 0.96);
   background: oklch(98% 0.02 175 / 0.95);
   color: oklch(42% 0.08 175);
@@ -377,7 +377,7 @@
     0 0 0 1px oklch(89% 0.05 175 / 0.78);
 }
 
-.lumi-status-error {
+.mixi-status-error {
   border-color: oklch(88% 0.06 22 / 0.98);
   background: oklch(98% 0.015 22 / 0.96);
   color: oklch(44% 0.09 22);
@@ -386,7 +386,7 @@
     0 0 0 1px oklch(90% 0.04 22 / 0.72);
 }
 
-@keyframes lumi-float {
+@keyframes mixi-float {
   0%,
   100% {
     transform: translateY(0);
@@ -396,7 +396,7 @@
   }
 }
 
-@keyframes lumi-poke-bounce {
+@keyframes mixi-poke-bounce {
   0% {
     transform: translateY(0) scale(1);
   }
@@ -411,7 +411,7 @@
   }
 }
 
-@keyframes lumi-status-hop {
+@keyframes mixi-status-hop {
   0% {
     transform: translateX(-50%) translateY(0);
   }
@@ -426,7 +426,7 @@
   }
 }
 
-@keyframes lumi-success-settle {
+@keyframes mixi-success-settle {
   0% {
     transform: translateY(0) scale(1);
   }
@@ -441,7 +441,7 @@
   }
 }
 
-@keyframes lumi-error-settle {
+@keyframes mixi-error-settle {
   0% {
     transform: translateY(0);
   }
@@ -456,7 +456,7 @@
   }
 }
 
-@keyframes lumi-absorb {
+@keyframes mixi-absorb {
   0% {
     opacity: 0;
     filter: blur(5px);
@@ -479,7 +479,7 @@
   }
 }
 
-@keyframes lumi-absorb-particle {
+@keyframes mixi-absorb-particle {
   0% {
     opacity: 0;
     transform: rotate(var(--particle-angle, 0deg)) translateX(270px) scale(0);
@@ -499,13 +499,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lumi-body,
-  .lumi-ability-card,
-  .lumi-particle,
-  .lumi-status-poked,
-  .lumi-body-poked,
-  .lumi-body-success,
-  .lumi-body-error {
+  .mixi-body,
+  .mixi-ability-card,
+  .mixi-particle,
+  .mixi-status-poked,
+  .mixi-body-poked,
+  .mixi-body-success,
+  .mixi-body-error {
     animation: none;
   }
 }

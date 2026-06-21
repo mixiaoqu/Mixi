@@ -1,0 +1,487 @@
+.mixi-console-form,
+.mixi-console-input,
+.mixi-console-character {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mixi-stage {
+  transition: padding 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mixi-stage--conversation {
+  padding-top: 1rem;
+  padding-bottom: 9.5rem;
+}
+
+.mixi-scene {
+  position: relative;
+  display: flex;
+  min-height: calc(100vh - 8rem);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition:
+    min-height 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    justify-content 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mixi-scene--conversation {
+  min-height: calc(100vh - 6.5rem);
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.mixi-idle-shell {
+  width: 100%;
+  position: absolute;
+  top: 5rem;
+  left: 0;
+  right: 0;
+  transition:
+    opacity 700ms ease-in-out,
+    transform 700ms ease-in-out;
+}
+
+.mixi-idle-shell--hidden {
+  opacity: 0;
+  transform: translateY(-5rem) scale(0.95);
+  pointer-events: none;
+}
+
+.mixi-chat-canvas {
+  align-self: center;
+  width: min(100%, 52rem);
+  flex: 1 1 auto;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(2.5rem);
+  transition:
+    max-height 700ms ease-in-out,
+    opacity 480ms ease,
+    transform 700ms ease-in-out;
+}
+
+.mixi-chat-canvas--visible {
+  max-height: calc(100vh - 10.5rem);
+  opacity: 1;
+  overflow-y: auto;
+  transform: translateY(0);
+  padding-bottom: 10rem;
+}
+
+.mixi-chat-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  min-height: 24rem;
+  padding: 1rem 1rem 2rem;
+}
+
+.mixi-message-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mixi-message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+
+.mixi-message-row--user {
+  justify-content: flex-end;
+}
+
+.mixi-message-row--assistant {
+  justify-content: flex-start;
+}
+
+.mixi-message-avatar {
+  display: flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+}
+
+.mixi-message-avatar--user {
+  order: 2;
+  background: rgb(239 246 255);
+  color: rgb(3 105 161);
+  border: 1px solid rgb(186 230 253);
+  box-shadow: 0 8px 18px rgb(14 165 233 / 10%);
+}
+
+.mixi-message-avatar--assistant {
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid rgb(226 232 240 / 90%);
+  box-shadow: 0 8px 18px rgb(15 23 42 / 6%);
+}
+
+.mixi-message-avatar__bot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.mixi-message-avatar__bot-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 1.6rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: rgb(15 23 42);
+}
+
+.mixi-message-avatar__bot-eye {
+  width: 0.28rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgb(34 211 238);
+  box-shadow: 0 0 6px rgb(34 211 238 / 55%);
+}
+
+.mixi-message {
+  border-radius: 1.5rem;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 14px 32px rgb(15 23 42 / 6%);
+  animation: mixi-message-enter 260ms ease-out;
+}
+
+.mixi-message--user {
+  order: 1;
+  width: fit-content;
+  max-width: min(18rem, 38%);
+  background: rgb(240 249 255);
+  border: 1px solid rgb(186 230 253 / 90%);
+  color: rgb(15 23 42);
+  box-shadow: 0 10px 24px rgb(14 165 233 / 8%);
+}
+
+.mixi-message--assistant {
+  width: min(100%, 42rem);
+  border: 1px solid rgb(226 232 240 / 90%);
+}
+
+.mixi-message__body {
+  padding: 0.75rem 1.125rem;
+}
+
+.mixi-message--user .mixi-message__body p {
+  color: rgb(15 23 42);
+}
+
+.mixi-composer-shell {
+  width: min(100%, 52rem);
+  position: relative;
+  z-index: 20;
+  margin-inline: auto;
+  transition:
+    transform 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    margin 700ms ease-in-out,
+    inset 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 320ms ease,
+    opacity 260ms ease;
+}
+
+.mixi-composer-shell--focused {
+  transform: translateY(-3.5rem);
+}
+
+.mixi-composer-shell--docked {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  z-index: 25;
+  width: min(100%, 52rem);
+  margin-top: 0;
+  padding-inline: 1rem;
+  transform: translateX(-50%);
+}
+
+.mixi-composer-shell--docked .mixi-console-form {
+  box-shadow:
+    0 22px 56px rgb(15 23 42 / 12%),
+    0 0 0 1px rgb(226 232 240 / 92%);
+  backdrop-filter: blur(20px);
+  background: rgb(255 255 255 / 95%);
+}
+
+.mixi-composer-shell--docked .mixi-console-character {
+  transform: translateY(8px) scale(0.94);
+}
+
+.mixi-console-form {
+  border-color: rgb(226 232 240) !important;
+  outline: 0 !important;
+  box-shadow: 0 10px 26px rgb(15 23 42 / 6%);
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    transform 700ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-radius 700ms ease-in-out;
+}
+
+.mixi-console-form:hover {
+  border-color: rgb(203 213 225) !important;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 7%);
+}
+
+.mixi-console-form:focus-within,
+.mixi-console-form:focus-within:hover {
+  border-color: rgb(103 232 249) !important;
+  box-shadow:
+    0 0 0 6px rgb(34 211 238 / 10%),
+    0 16px 36px rgb(8 145 178 / 12%);
+}
+
+.mixi-console-form:focus,
+.mixi-console-form:focus-visible,
+.mixi-console-form:focus-within,
+.mixi-console-input:focus,
+.mixi-console-input:focus-visible {
+  outline: none !important;
+}
+
+.mixi-console-input {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0 !important;
+  outline: 0 !important;
+}
+
+.mixi-console-character {
+  animation: mixi-console-float 4s ease-in-out infinite;
+  transform-origin: 50% 80%;
+  transition:
+    opacity 220ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mixi-console-face {
+  box-shadow: inset 0 1px 6px rgb(0 0 0 / 32%);
+}
+
+.mixi-console-eyes {
+  animation: mixi-console-glance 6.5s ease-in-out infinite;
+}
+
+.mixi-console-eye {
+  animation: mixi-console-blink 4.8s ease-in-out infinite;
+  box-shadow: 0 0 8px rgb(103 232 249 / 58%);
+  transform-origin: center;
+}
+
+.mixi-console-antenna {
+  animation: mixi-console-breathe 2.8s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 80%);
+}
+
+.mixi-console-hand {
+  position: absolute;
+  bottom: 6px;
+  width: 9px;
+  height: 16px;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 999px;
+  background: white;
+  transition: transform 180ms ease, bottom 180ms ease;
+}
+
+.mixi-console-hand-left {
+  left: -5px;
+  transform: rotate(18deg);
+}
+
+.mixi-console-hand-right {
+  right: -5px;
+  transform: rotate(-18deg);
+}
+
+.mixi-console-character[data-active='true'] {
+  animation: mixi-console-attentive 2.4s ease-in-out infinite;
+}
+
+.mixi-console-character[data-active='true'] .mixi-console-eyes {
+  animation: none;
+  transform: translateY(1px);
+}
+
+.mixi-console-character[data-active='true'] .mixi-console-hand-left {
+  bottom: 11px;
+  transform: rotate(-20deg);
+}
+
+.mixi-console-character[data-active='true'] .mixi-console-hand-right {
+  bottom: 12px;
+  animation: mixi-console-wave 1.7s ease-in-out infinite;
+}
+
+.mixi-shortcuts-shell {
+  margin-top: 2.5rem;
+  transition:
+    opacity 700ms ease-out,
+    transform 700ms ease-out,
+    max-height 700ms ease-out,
+    margin 700ms ease-out;
+}
+
+@keyframes mixi-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mixi-console-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes mixi-console-attentive {
+  0%,
+  100% {
+    transform: translateY(-3px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-1deg);
+  }
+}
+
+@keyframes mixi-console-glance {
+  0%,
+  35%,
+  100% {
+    transform: translateX(0);
+  }
+  42%,
+  52% {
+    transform: translateX(3px);
+  }
+  68%,
+  78% {
+    transform: translateX(-3px);
+  }
+}
+
+@keyframes mixi-console-blink {
+  0%,
+  45%,
+  49%,
+  100% {
+    transform: scaleY(1);
+  }
+  47% {
+    transform: scaleY(0.14);
+  }
+}
+
+@keyframes mixi-console-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: translateX(-50%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.08);
+  }
+}
+
+@keyframes mixi-console-wave {
+  0%,
+  100% {
+    transform: rotate(20deg);
+  }
+  50% {
+    transform: rotate(-18deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .mixi-stage--conversation {
+    padding-bottom: 9rem;
+  }
+
+  .mixi-scene {
+    min-height: calc(100vh - 7rem);
+    justify-content: flex-start;
+    padding-top: 2.5rem;
+  }
+
+  .mixi-idle-shell {
+    top: 3rem;
+  }
+
+  .mixi-chat-canvas--visible {
+    max-height: calc(100vh - 9.5rem);
+    padding-bottom: 9rem;
+  }
+
+  .mixi-chat-stack {
+    min-height: 18rem;
+    padding-inline: 0;
+  }
+
+  .mixi-composer-shell {
+    margin-top: 18vh;
+  }
+
+  .mixi-composer-shell--focused {
+    transform: translateY(-2rem);
+  }
+
+  .mixi-composer-shell--docked {
+    bottom: 0.85rem;
+    width: calc(100% - 1rem);
+    max-width: calc(100% - 1rem);
+    padding-inline: 0.75rem;
+    transform: translateX(-50%);
+  }
+
+  .mixi-message--user,
+  .mixi-message--assistant {
+    max-width: 100%;
+  }
+
+  .mixi-message-row {
+    gap: 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mixi-stage,
+  .mixi-scene,
+  .mixi-idle-shell,
+  .mixi-chat-canvas,
+  .mixi-composer-shell,
+  .mixi-console-form,
+  .mixi-console-character,
+  .mixi-console-eyes,
+  .mixi-console-eye,
+  .mixi-console-antenna,
+  .mixi-message,
+  .mixi-console-character[data-active='true'] .mixi-console-hand-right {
+    animation: none;
+    transition-duration: 0.01ms !important;
+  }
+}

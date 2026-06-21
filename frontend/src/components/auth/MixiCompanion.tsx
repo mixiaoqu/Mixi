@@ -3,7 +3,7 @@ import { Icon, type IconName } from '../Icon'
 
 export type AuthFocus = 'email' | 'password' | null
 
-type LumiCompanionProps = {
+type MixiCompanionProps = {
   focus: AuthFocus
   showPassword: boolean
   passwordLength: number
@@ -18,8 +18,7 @@ const IDLE_GLANCE_MIN_MS = 7000
 const IDLE_GLANCE_VARIANCE_MS = 5000
 const IDLE_GLANCE_DURATION_MS = 900
 
-export default function LumiCompanion({ focus, showPassword, passwordLength, isSubmitting, isLoginSuccess, isLoginError, mouse }: LumiCompanionProps) {
-  const bodyRef = useRef<HTMLButtonElement>(null)
+export default function MixiCompanion({ focus, showPassword, passwordLength, isSubmitting, isLoginSuccess, isLoginError, mouse }: MixiCompanionProps) {
   const pokeTimerRef = useRef<number | undefined>(undefined)
   const [isBlinking, setIsBlinking] = useState(false)
   const [isPoked, setIsPoked] = useState(false)
@@ -46,10 +45,10 @@ export default function LumiCompanion({ focus, showPassword, passwordLength, isS
 
   useEffect(() => {
     if (focus || isSubmitting || isLoginSuccess || isLoginError || isPoked) {
-      setIdleGlance(null)
       return
     }
 
+    const resetTimer = window.setTimeout(() => setIdleGlance(null), 0)
     let glanceStartTimer: number | undefined
     let glanceEndTimer: number | undefined
 
@@ -74,6 +73,7 @@ export default function LumiCompanion({ focus, showPassword, passwordLength, isS
     scheduleIdleGlance()
 
     return () => {
+      window.clearTimeout(resetTimer)
       window.clearTimeout(glanceStartTimer)
       window.clearTimeout(glanceEndTimer)
     }
@@ -97,11 +97,8 @@ export default function LumiCompanion({ focus, showPassword, passwordLength, isS
     if (focus === 'password') return { x: 0, y: -2 }
     if (focus === 'email') return { x: 8, y: 6 }
 
-    const rect = bodyRef.current?.getBoundingClientRect()
-    if (!rect) return { x: 0, y: 0 }
-
-    const dx = mouse.x - (rect.left + rect.width / 2)
-    const dy = mouse.y - (rect.top + rect.height / 2)
+    const dx = mouse.x - window.innerWidth * 0.25
+    const dy = mouse.y - window.innerHeight * 0.48
     const angle = Math.atan2(dy, dx)
     const distance = Math.min(7, Math.hypot(dx, dy) / 42)
 
@@ -123,64 +120,63 @@ export default function LumiCompanion({ focus, showPassword, passwordLength, isS
     : isPoked
       ? '哎呀！被戳中了 ヾ(≧▽≦*)o'
       : showPassword
-      ? 'Lumi 已保护输入'
+      ? 'Mixi 已保护输入'
       : isPeeking
         ? '正在检查输入安全'
         : isSubmitting
           ? '正在登录工作台'
           : focus === 'email'
             ? '正在确认工作邮箱'
-            : 'Lumi 已就绪'
+            : 'Mixi 已就绪'
 
   const abilities: Array<{ icon: IconName; label: string; className: string }> = [
-    { icon: 'database', label: '记忆', className: 'lumi-stream-memory' },
-    { icon: 'book', label: '知识', className: 'lumi-stream-knowledge' },
-    { icon: 'bolt', label: '推理', className: 'lumi-stream-reasoning' },
-    { icon: 'grid', label: '工具', className: 'lumi-stream-tools' },
+    { icon: 'database', label: '记忆', className: 'mixi-stream-memory' },
+    { icon: 'book', label: '知识', className: 'mixi-stream-knowledge' },
+    { icon: 'bolt', label: '推理', className: 'mixi-stream-reasoning' },
+    { icon: 'grid', label: '工具', className: 'mixi-stream-tools' },
   ]
 
   const indicatorClass = isLoginSuccess ? 'bg-emerald-400' : isLoginError ? 'bg-rose-400' : isPoked ? 'bg-cyan-400' : showPassword ? 'bg-sky-400' : isPeeking ? 'bg-indigo-400' : 'bg-emerald-400'
 
   return (
-    <div className="lumi-wrap">
-      <div className="lumi-data-stream" aria-hidden="true">
+    <div className="mixi-wrap">
+      <div className="mixi-data-stream" aria-hidden="true">
         {abilities.map((ability) => (
-          <div key={ability.label} className={`lumi-stream-lane ${ability.className}`}>
-            <div className="lumi-ability-card">
+          <div key={ability.label} className={`mixi-stream-lane ${ability.className}`}>
+            <div className="mixi-ability-card">
               <Icon name={ability.icon} className="h-4 w-4" />
               <span>{ability.label}</span>
             </div>
           </div>
         ))}
-        <span className="lumi-particle lumi-particle-a" />
-        <span className="lumi-particle lumi-particle-b" />
-        <span className="lumi-particle lumi-particle-c" />
-        <span className="lumi-particle lumi-particle-d" />
+        <span className="mixi-particle mixi-particle-a" />
+        <span className="mixi-particle mixi-particle-b" />
+        <span className="mixi-particle mixi-particle-c" />
+        <span className="mixi-particle mixi-particle-d" />
       </div>
 
-      <div className="lumi-orbit" aria-hidden="true">
-        <div className="lumi-ring lumi-ring-one" />
+      <div className="mixi-orbit" aria-hidden="true">
+        <div className="mixi-ring mixi-ring-one" />
       </div>
 
       <button
-        ref={bodyRef}
-        aria-label="与 Lumi 互动"
-        className={`lumi-body ${isPoked ? 'lumi-body-poked' : ''} ${isLoginSuccess ? 'lumi-body-success' : ''} ${isLoginError ? 'lumi-body-error' : ''}`}
+        aria-label="与 Mixi 互动"
+        className={`mixi-body ${isPoked ? 'mixi-body-poked' : ''} ${isLoginSuccess ? 'mixi-body-success' : ''} ${isLoginError ? 'mixi-body-error' : ''}`}
         onClick={handlePoke}
         type="button"
       >
-        <div className="lumi-antenna">
+        <div className="mixi-antenna">
           <span className={indicatorClass} />
         </div>
-        <div className="lumi-face">
-          <span className={`lumi-eye ${isPoked ? 'lumi-eye-poked' : ''} ${isLoginSuccess ? 'lumi-eye-success' : ''} ${isLoginError ? 'lumi-eye-error' : ''} ${leftEyeClass}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} />
-          <span className={`lumi-eye ${isPoked ? 'lumi-eye-poked' : ''} ${isLoginSuccess ? 'lumi-eye-success' : ''} ${isLoginError ? 'lumi-eye-error' : ''} ${rightEyeClass}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} />
+        <div className="mixi-face">
+          <span className={`mixi-eye ${isPoked ? 'mixi-eye-poked' : ''} ${isLoginSuccess ? 'mixi-eye-success' : ''} ${isLoginError ? 'mixi-eye-error' : ''} ${leftEyeClass}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} />
+          <span className={`mixi-eye ${isPoked ? 'mixi-eye-poked' : ''} ${isLoginSuccess ? 'mixi-eye-success' : ''} ${isLoginError ? 'mixi-eye-error' : ''} ${rightEyeClass}`} style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }} />
         </div>
-        <span className={`lumi-hand lumi-hand-left ${isPeeking ? 'lumi-hand-peek-left' : ''} ${isPoked ? 'lumi-hand-cheer-left' : ''} ${isLoginSuccess ? 'lumi-hand-rest-left' : ''}`} />
-        <span className={`lumi-hand lumi-hand-right ${isPeeking ? 'lumi-hand-peek-right' : ''} ${isPoked ? 'lumi-hand-cheer-right' : ''} ${isLoginSuccess ? 'lumi-hand-rest-right' : ''}`} />
+        <span className={`mixi-hand mixi-hand-left ${isPeeking ? 'mixi-hand-peek-left' : ''} ${isPoked ? 'mixi-hand-cheer-left' : ''} ${isLoginSuccess ? 'mixi-hand-rest-left' : ''}`} />
+        <span className={`mixi-hand mixi-hand-right ${isPeeking ? 'mixi-hand-peek-right' : ''} ${isPoked ? 'mixi-hand-cheer-right' : ''} ${isLoginSuccess ? 'mixi-hand-rest-right' : ''}`} />
       </button>
 
-      <div className={`lumi-status ${isPoked ? 'lumi-status-poked' : ''} ${isLoginSuccess ? 'lumi-status-success' : ''} ${isLoginError ? 'lumi-status-error' : ''}`}>
+      <div className={`mixi-status ${isPoked ? 'mixi-status-poked' : ''} ${isLoginSuccess ? 'mixi-status-success' : ''} ${isLoginError ? 'mixi-status-error' : ''}`}>
         <span className={indicatorClass} />
         {status}
       </div>
