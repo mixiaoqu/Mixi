@@ -159,7 +159,7 @@ class WorklogAgentRunnerTests(unittest.TestCase):
 
         response = asyncio.run(runner.run(agent=self.agent, user=self.user, request=self.request))
 
-        self.assertIn("## 非代码工作", response.markdown)
+        self.assertIn("## 备注", response.markdown)
         self.assertTrue(response.summary.endswith("。"))
         self.workflow_runs.mark_succeeded.assert_called_once()
 

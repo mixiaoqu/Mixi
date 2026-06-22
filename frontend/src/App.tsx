@@ -37,6 +37,8 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>('home')
   const [mixiMessages, setMixiMessages] = useState<MixiMessage[]>([])
   const [mixiStreaming, setMixiStreaming] = useState(false)
+  const [mixiPresetPrompt, setMixiPresetPrompt] = useState('')
+  const [mixiPresetNonce, setMixiPresetNonce] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -93,19 +95,22 @@ export default function App() {
 
   function handOffWorklogToMixi() {
     setActiveView('home')
-    void handleMixiTask('帮我生成今天的工作日志')
+    setMixiPresetPrompt('帮我生成工作日志')
+    setMixiPresetNonce((value) => value + 1)
   }
 
   function handleNewConversation() {
     setActiveView('home')
     setMixiMessages([])
     setMixiStreaming(false)
+    setMixiPresetPrompt('')
     setAccountMenuOpen(false)
   }
 
   async function handleMixiTask(prompt: string) {
     const trimmedPrompt = prompt.trim()
     if (!trimmedPrompt || mixiStreaming) return
+
     const history: MixiHistoryItem[] = mixiMessages
       .filter((message) => message.kind === 'text' && message.content?.trim())
       .slice(-8)
@@ -125,35 +130,39 @@ export default function App() {
     setMixiStreaming(true)
 
     try {
-      await streamMixiReply(trimmedPrompt, {
-        onChunk: (delta) => {
-          setMixiMessages((current) =>
-            current.map((message) =>
-              message.id === assistantMessageId
-                ? { ...message, content: `${message.content ?? ''}${delta}`, status: 'streaming' }
-                : message,
-            ),
-          )
+      await streamMixiReply(
+        trimmedPrompt,
+        {
+          onChunk: (delta) => {
+            setMixiMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, content: `${message.content ?? ''}${delta}`, status: 'streaming' }
+                  : message,
+              ),
+            )
+          },
+          onCompleted: (message) => {
+            setMixiMessages((current) =>
+              current.map((item) =>
+                item.id === assistantMessageId
+                  ? { ...item, content: message || item.content, status: 'done' }
+                  : item,
+              ),
+            )
+          },
+          onWidget: (widget) => {
+            setMixiMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, kind: 'widget', widget, content: undefined, status: 'done' }
+                  : message,
+              ),
+            )
+          },
         },
-        onCompleted: (message) => {
-          setMixiMessages((current) =>
-            current.map((item) =>
-              item.id === assistantMessageId
-                ? { ...item, content: message || item.content, status: 'done' }
-                : item,
-            ),
-          )
-        },
-        onWidget: (widget) => {
-          setMixiMessages((current) =>
-            current.map((message) =>
-              message.id === assistantMessageId
-                ? { ...message, kind: 'widget', widget, content: undefined, status: 'done' }
-                : message,
-            ),
-          )
-        },
-      }, history)
+        history,
+      )
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Mixi 暂时无法响应，请稍后重试。'
 
@@ -319,7 +328,7 @@ export default function App() {
             </div>
           </div>
 
-          {activeView === 'home' && (
+          {activeView === 'home' ? (
             <MixiTaskConsole
               isStreaming={mixiStreaming}
               messages={mixiMessages}
@@ -327,20 +336,22 @@ export default function App() {
               onGenerateWorkLog={handOffWorklogToMixi}
               onOpenDataSources={() => setActiveView('dataSources')}
               onSubmit={handleMixiTask}
+              presetPrompt={mixiPresetPrompt}
+              presetPromptNonce={mixiPresetNonce}
               userInitial={currentUser?.display_name?.charAt(0).toUpperCase() || 'U'}
             />
-          )}
+          ) : null}
 
-          {activeView === 'agents' && (
+          {activeView === 'agents' ? (
             <AgentsPage
               onHandOffWorklog={handOffWorklogToMixi}
               onOpenDataSources={() => setActiveView('dataSources')}
             />
-          )}
+          ) : null}
 
-          {activeView === 'knowledge' && <KnowledgePage knowledgeBases={knowledgeBases} />}
-          {activeView === 'dataSources' && <DataSourcesPage />}
-          {activeView === 'settings' && currentUser && <SettingsPage user={currentUser} />}
+          {activeView === 'knowledge' ? <KnowledgePage knowledgeBases={knowledgeBases} /> : null}
+          {activeView === 'dataSources' ? <DataSourcesPage /> : null}
+          {activeView === 'settings' && currentUser ? <SettingsPage user={currentUser} /> : null}
         </main>
       </div>
     </div>

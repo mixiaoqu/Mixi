@@ -29,7 +29,8 @@ function notesValueFromDraft(draft?: WorklogWidgetDraft) {
 export default function WorklogForm({ title, description, draft, onOpenDataSources }: WorklogFormProps) {
   const [sources, setSources] = useState<GitDataSource[]>([])
   const [sourceId, setSourceId] = useState(draft?.data_source_id ?? '')
-  const [date, setDate] = useState(dateValueFromIso(draft?.start_at))
+  const [startDate, setStartDate] = useState(dateValueFromIso(draft?.start_at))
+  const [endDate, setEndDate] = useState(dateValueFromIso(draft?.end_at ?? draft?.start_at))
   const [notes, setNotes] = useState(notesValueFromDraft(draft))
   const [status, setStatus] = useState<'loading' | 'idle' | 'running' | 'done'>('loading')
   const [error, setError] = useState('')
@@ -58,19 +59,29 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
   }, [])
 
   const selectedSource = useMemo(() => sources.find((source) => source.id === sourceId), [sourceId, sources])
+  const isDateRangeValid = Boolean(startDate && endDate && startDate <= endDate)
+
+  function handleStartDateChange(value: string) {
+    setStartDate(value)
+    if (endDate && value > endDate) setEndDate(value)
+  }
+
+  function handleEndDateChange(value: string) {
+    setEndDate(value)
+    if (startDate && value < startDate) setStartDate(value)
+  }
 
   async function runWorklog() {
-    if (!selectedSource || status === 'running') return
+    if (!selectedSource || !isDateRangeValid || status === 'running') return
 
     setStatus('running')
     setError('')
 
-    const start = draft?.start_at ? new Date(draft.start_at) : new Date(`${date}T00:00:00`)
-    const end = draft?.end_at
-      ? new Date(draft.end_at)
-      : date === localDateValue()
+    const start = new Date(`${startDate}T00:00:00`)
+    const end = endDate === localDateValue()
         ? new Date()
-        : new Date(`${date}T23:59:59`)
+        : new Date(`${endDate}T23:59:59`)
+    const dateRangeLabel = startDate === endDate ? startDate : `${startDate} 至 ${endDate}`
 
     try {
       const response = await generateWorklog({
@@ -79,7 +90,7 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
         end_at: end.toISOString(),
         branch: draft?.branch ?? selectedSource.default_branch,
         commit_limit: 50,
-        user_prompt: draft?.user_prompt ?? `整理 ${date} 的工作进展`,
+        user_prompt: draft?.user_prompt ?? `整理 ${dateRangeLabel} 的工作进展`,
         non_code_notes: notes.split('\n').map((note) => note.trim()).filter(Boolean),
       })
       setResult(response)
@@ -191,16 +202,30 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
             </select>
           </label>
 
-          <label>
-            <span className="mb-2 block text-xs font-bold text-slate-700">日志日期</span>
-            <input
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
-              max={localDateValue()}
-              onChange={(event) => setDate(event.target.value)}
-              type="date"
-              value={date}
-            />
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span className="mb-2 block text-xs font-bold text-slate-700">开始日期</span>
+              <input
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                max={endDate || localDateValue()}
+                onChange={(event) => handleStartDateChange(event.target.value)}
+                type="date"
+                value={startDate}
+              />
+            </label>
+
+            <label>
+              <span className="mb-2 block text-xs font-bold text-slate-700">结束日期</span>
+              <input
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                max={localDateValue()}
+                min={startDate}
+                onChange={(event) => handleEndDateChange(event.target.value)}
+                type="date"
+                value={endDate}
+              />
+            </label>
+          </div>
 
           <label>
             <span className="mb-2 block text-xs font-bold text-slate-700">非代码工作（选填，每行一项）</span>
@@ -218,7 +243,7 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
             <p className="text-xs font-semibold text-slate-500">运行前仅授权所选仓库与日期范围</p>
             <button
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={!date || status === 'running'}
+              disabled={!isDateRangeValid || status === 'running'}
               type="submit"
             >
               <Icon className={`h-4 w-4 ${status === 'running' ? 'animate-spin' : ''}`} name={status === 'running' ? 'loader' : 'spark'} />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 
 import type { MixiMessage } from '../../features/mixi/types'
 import { Icon } from '../Icon'
@@ -12,6 +12,8 @@ type MixiTaskConsoleProps = {
   onOpenDataSources: () => void
   messages: MixiMessage[]
   isStreaming: boolean
+  presetPrompt: string
+  presetPromptNonce: number
   userInitial: string
 }
 
@@ -37,6 +39,8 @@ export default function MixiTaskConsole({
   onOpenDataSources,
   messages,
   isStreaming,
+  presetPrompt,
+  presetPromptNonce,
   userInitial,
 }: MixiTaskConsoleProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -71,6 +75,20 @@ export default function MixiTaskConsole({
     if (!node) return
     node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
   }, [messages])
+
+  const applyPresetPrompt = useEffectEvent((value: string) => {
+    setPrompt(value)
+    setFocused(true)
+    inputRef.current?.focus()
+  })
+
+  useEffect(() => {
+    if (!presetPrompt) return
+    const frame = window.requestAnimationFrame(() => {
+      applyPresetPrompt(presetPrompt)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [presetPrompt, presetPromptNonce])
 
   async function submitPrompt(task: string) {
     const trimmedTask = task.trim()

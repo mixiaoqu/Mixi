@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 
@@ -10,6 +11,8 @@ from pydantic import BaseModel, Field, model_validator
 from app.db.repositories.git_data_source import GitDataSourceRepository
 from app.services.git_remote import GitConnectionError, decrypt_credential, list_remote_commits
 from app.tools.base import AgentTool, ToolContext, ToolExecutionError, ToolPermissionError
+
+logger = logging.getLogger(__name__)
 
 
 class GitListCommitsInput(BaseModel):
@@ -34,6 +37,8 @@ class GitCommitResult(BaseModel):
     author_email: str
     authored_at: datetime
     subject: str
+    changed_files: list[str] = Field(default_factory=list)
+    patch: str = ""
 
 
 class GitListCommitsOutput(BaseModel):
@@ -62,6 +67,17 @@ class GitListCommitsTool(AgentTool[GitListCommitsInput, GitListCommitsOutput]):
         if source.status != "connected":
             raise ToolExecutionError("Git 数据源当前不可用")
 
+        branch = payload.branch or source.default_branch
+        logger.debug(
+            "Git tool execute: data_source_id=%s source_name=%s branch=%s start_at=%s end_at=%s limit=%s",
+            source.id,
+            source.name,
+            branch,
+            payload.start_at.isoformat(),
+            payload.end_at.isoformat(),
+            payload.limit,
+        )
+
         try:
             credential = decrypt_credential(source.encrypted_credential)
             commits = await asyncio.to_thread(
@@ -69,7 +85,7 @@ class GitListCommitsTool(AgentTool[GitListCommitsInput, GitListCommitsOutput]):
                 repository_url=source.repository_url,
                 auth_type=source.auth_type,
                 credential=credential,
-                branch=payload.branch or source.default_branch,
+                branch=branch,
                 start_at=payload.start_at,
                 end_at=payload.end_at,
                 limit=payload.limit,
@@ -79,7 +95,6 @@ class GitListCommitsTool(AgentTool[GitListCommitsInput, GitListCommitsOutput]):
         except GitConnectionError as exc:
             raise ToolExecutionError(str(exc)) from exc
 
-        branch = payload.branch or source.default_branch
         return GitListCommitsOutput(
             data_source_id=source.id,
             repository_name=source.name,

@@ -8,7 +8,7 @@ import socket
 import subprocess
 import tempfile
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from collections.abc import Iterator
 from pathlib import Path
@@ -19,6 +19,8 @@ from cryptography.fernet import Fernet
 from app.core.config import settings
 
 GIT_OUTPUT_ENCODING = "utf-8"
+MAX_PATCH_CHARS_PER_COMMIT = 4_000
+MAX_PATCH_CHARS_TOTAL = 18_000
 
 
 class GitConnectionError(Exception):
@@ -39,6 +41,8 @@ class GitCommit:
     author_email: str
     authored_at: datetime
     subject: str
+    changed_files: list[str] = field(default_factory=list)
+    patch: str = ""
 
 
 def _fernet() -> Fernet:
@@ -143,6 +147,40 @@ def _run_git(args: list[str], *, env: dict[str, str], timeout: int, cwd: Path | 
     return result.stdout or ""
 
 
+def _truncate_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    return f"{value[:max_chars]}\n...（内容过长，已截断）"
+
+
+def _changed_files_for_commit(sha: str, *, repository_path: Path, env: dict[str, str]) -> list[str]:
+    output = _run_git(
+        ["show", "--format=", "--name-only", "--no-renames", sha],
+        cwd=repository_path,
+        env=env,
+        timeout=20,
+    )
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _patch_for_commit(
+    sha: str,
+    *,
+    repository_path: Path,
+    env: dict[str, str],
+    remaining_budget: int,
+) -> str:
+    if remaining_budget <= 0:
+        return ""
+    output = _run_git(
+        ["show", "--format=", "--find-renames", "--unified=3", "--no-ext-diff", sha],
+        cwd=repository_path,
+        env=env,
+        timeout=30,
+    )
+    return _truncate_text(output, min(MAX_PATCH_CHARS_PER_COMMIT, remaining_budget))
+
+
 def inspect_remote(repository_url: str, auth_type: str, credential: str | None) -> GitRemoteInfo:
     url = repository_url.strip()
     host = _repository_host(url)
@@ -183,6 +221,7 @@ def list_remote_commits(
     if not branch or branch.startswith("-") or any(token in branch for token in ("..", "~", "^", ":", "\\")):
         raise GitConnectionError("分支名称无效")
 
+    commits: list[GitCommit] = []
     with tempfile.TemporaryDirectory(prefix="agent-platform-git-read-") as temp_dir:
         repository_path = Path(temp_dir) / "repository"
         with git_auth_environment(auth_type, credential) as env:
@@ -195,7 +234,6 @@ def list_remote_commits(
                     "--single-branch",
                     "--branch",
                     branch,
-                    f"--shallow-since={start_at.isoformat()}",
                     repository_url,
                     str(repository_path),
                 ],
@@ -215,21 +253,30 @@ def list_remote_commits(
                 env=env,
                 timeout=30,
             )
-
-    commits: list[GitCommit] = []
-    for record in output.strip("\n\x1e").split("\x1e"):
-        if not record.strip():
-            continue
-        fields = record.strip().split("\x1f", 4)
-        if len(fields) != 5:
-            continue
-        commits.append(
-            GitCommit(
-                sha=fields[0],
-                author_name=fields[1],
-                author_email=fields[2],
-                authored_at=datetime.fromisoformat(fields[3]),
-                subject=fields[4],
-            )
-        )
+            remaining_patch_budget = MAX_PATCH_CHARS_TOTAL
+            for record in output.strip("\n\x1e").split("\x1e"):
+                if not record.strip():
+                    continue
+                fields = record.strip().split("\x1f", 4)
+                if len(fields) != 5:
+                    continue
+                changed_files = _changed_files_for_commit(fields[0], repository_path=repository_path, env=env)
+                patch = _patch_for_commit(
+                    fields[0],
+                    repository_path=repository_path,
+                    env=env,
+                    remaining_budget=remaining_patch_budget,
+                )
+                remaining_patch_budget = max(0, remaining_patch_budget - len(patch))
+                commits.append(
+                    GitCommit(
+                        sha=fields[0],
+                        author_name=fields[1],
+                        author_email=fields[2],
+                        authored_at=datetime.fromisoformat(fields[3]),
+                        subject=fields[4],
+                        changed_files=changed_files,
+                        patch=patch,
+                    )
+                )
     return commits

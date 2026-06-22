@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
-from app.services.git_remote import GIT_OUTPUT_ENCODING, GitCommit, _run_git
+from app.services.git_remote import GIT_OUTPUT_ENCODING, GitCommit, _run_git, list_remote_commits
 from app.tools.base import ToolContext, ToolPermissionError
 from app.tools.git_repository import GitListCommitsInput, GitListCommitsTool
 
@@ -93,3 +93,61 @@ class GitRemoteProcessTests(TestCase):
         self.assertEqual(result, "")
         self.assertEqual(run_mock.call_args.kwargs["encoding"], GIT_OUTPUT_ENCODING)
         self.assertEqual(run_mock.call_args.kwargs["errors"], "replace")
+
+    def test_list_remote_commits_returns_empty_list_when_log_has_no_records(self) -> None:
+        start_at = datetime(2026, 6, 21, 16, 0, tzinfo=UTC)
+        end_at = datetime(2026, 6, 22, 16, 0, tzinfo=UTC)
+        completed_process = SimpleNamespace(returncode=0, stdout="")
+
+        with patch("app.services.git_remote._validate_public_host"):
+            with patch("app.services.git_remote.subprocess.run", return_value=completed_process) as run_mock:
+                commits = list_remote_commits(
+                    repository_url="https://example.com/owner/repository.git",
+                    auth_type="public",
+                    credential=None,
+                    branch="main",
+                    start_at=start_at,
+                    end_at=end_at,
+                    limit=50,
+                )
+
+        clone_args = run_mock.call_args_list[0].args[0]
+        log_args = run_mock.call_args_list[1].args[0]
+
+        self.assertEqual(commits, [])
+        self.assertFalse(any(arg.startswith("--shallow-since=") for arg in clone_args))
+        self.assertIn(f"--since={start_at.isoformat()}", log_args)
+        self.assertIn(f"--until={end_at.isoformat()}", log_args)
+
+    def test_list_remote_commits_includes_changed_files_and_patch(self) -> None:
+        start_at = datetime(2026, 6, 21, 16, 0, tzinfo=UTC)
+        end_at = datetime(2026, 6, 22, 16, 0, tzinfo=UTC)
+        authored_at = "2026-06-22T10:00:00+00:00"
+        log_output = f"abc123\x1fMichael\x1fmichael@example.com\x1f{authored_at}\x1fAdd parser\x1e"
+        changed_files_output = "backend/app/parser.py\nbackend/tests/test_parser.py\n"
+        patch_output = "diff --git a/backend/app/parser.py b/backend/app/parser.py\n+def parse():\n+    return True\n"
+
+        with patch("app.services.git_remote._validate_public_host"):
+            with patch(
+                "app.services.git_remote.subprocess.run",
+                side_effect=[
+                    SimpleNamespace(returncode=0, stdout=""),
+                    SimpleNamespace(returncode=0, stdout=log_output),
+                    SimpleNamespace(returncode=0, stdout=changed_files_output),
+                    SimpleNamespace(returncode=0, stdout=patch_output),
+                ],
+            ) as run_mock:
+                commits = list_remote_commits(
+                    repository_url="https://example.com/owner/repository.git",
+                    auth_type="public",
+                    credential=None,
+                    branch="main",
+                    start_at=start_at,
+                    end_at=end_at,
+                    limit=50,
+                )
+
+        self.assertEqual(commits[0].changed_files, ["backend/app/parser.py", "backend/tests/test_parser.py"])
+        self.assertIn("def parse", commits[0].patch)
+        self.assertIn("--name-only", run_mock.call_args_list[2].args[0])
+        self.assertIn("--unified=3", run_mock.call_args_list[3].args[0])

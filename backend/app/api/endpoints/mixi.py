@@ -25,6 +25,77 @@ def sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _ensure_worklog_agent(current_user: CurrentUser, repositories: RepositoryDep):
+    workspaces = repositories.workspaces.list_for_user(current_user.id, limit=1)
+    if workspaces:
+        workspace = workspaces[0]
+    else:
+        workspace = repositories.workspaces.create_workspace(
+            owner_user_id=current_user.id,
+            slug=f"personal-{current_user.id.hex[:12]}",
+            name=f"{current_user.display_name} 的工作区",
+            description="个人智能体工作区",
+        )
+
+    agent = repositories.agents.get_by_slug(workspace.id, "worklog-agent")
+    if agent is None:
+        agent = repositories.agents.create_agent(
+            workspace_id=workspace.id,
+            slug="worklog-agent",
+            name="工作日志 Agent",
+            description="汇总 Git 提交和非代码事项，生成工作日志草稿。",
+            config={"agent_type": "system", "workflow": "worklog"},
+        )
+        repositories.agents.update(agent, status=AgentStatus.active)
+    return agent
+
+
+def _build_worklog_follow_up_message(*, intake, has_data_sources: bool) -> str:
+    if not has_data_sources:
+        return "你还没有连接 Git 数据源。先去数据源页面连接一个仓库，然后再让我生成工作日志。"
+
+    parts: list[str] = []
+    if intake.data_source_id:
+        parts.append("我已经识别到仓库")
+    if intake.start_at and intake.end_at:
+        if intake.start_at.date() == intake.end_at.date():
+            parts.append(f"时间是 {intake.start_at.strftime('%Y-%m-%d')}")
+        else:
+            parts.append(
+                f"时间范围是 {intake.start_at.strftime('%Y-%m-%d')} 到 {intake.end_at.strftime('%Y-%m-%d')}"
+            )
+    if intake.non_code_notes:
+        parts.append(f"还提取到了 {len(intake.non_code_notes)} 项非代码事项")
+
+    missing_prompts: list[str] = []
+    if "data_source" in intake.missing_fields:
+        missing_prompts.append("请告诉我要使用哪个 Git 数据源")
+    if "time_range" in intake.missing_fields:
+        missing_prompts.append("请告诉我要生成今天、昨天还是本周的日志")
+
+    prefix = "，".join(parts)
+    question = "；".join(missing_prompts) if missing_prompts else "请继续补充信息。"
+    return f"{prefix}。{question}" if prefix else question
+
+
+def _build_worklog_widget_payload(*, intake) -> dict[str, object]:
+    return {
+        "type": "worklog_form",
+        "title": "确认工作日志参数",
+        "description": intake.description,
+        "draft": {
+            "data_source_id": intake.data_source_id,
+            "branch": intake.branch,
+            "start_at": intake.start_at.isoformat() if intake.start_at else None,
+            "end_at": intake.end_at.isoformat() if intake.end_at else None,
+            "user_prompt": intake.user_prompt,
+            "non_code_notes": intake.non_code_notes,
+            "missing_fields": intake.missing_fields,
+            "auto_run": False,
+        },
+    }
+
+
 @router.post("/mixi/stream")
 async def stream_mixi_chat(
     payload: MixiChatRequest,
@@ -34,8 +105,8 @@ async def stream_mixi_chat(
     if not payload.prompt.strip():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Prompt cannot be empty")
 
-    if is_worklog_request(payload.prompt):
-        history = [item.content for item in payload.history if item.role == "user"]
+    if is_worklog_request(payload.prompt, payload.history):
+        history = list(payload.history)
         data_sources = repositories.git_data_sources.list_by_user(current_user.id)
 
         try:
@@ -51,25 +122,14 @@ async def stream_mixi_chat(
         )
 
         async def worklog_event_stream() -> AsyncIterator[str]:
-            yield sse_event(
-                "widget",
-                {
-                    "type": "worklog_form",
-                    "title": intake.title,
-                    "description": intake.description,
-                    "draft": {
-                        "data_source_id": intake.data_source_id,
-                        "branch": intake.branch,
-                        "start_at": intake.start_at.isoformat() if intake.start_at else None,
-                        "end_at": intake.end_at.isoformat() if intake.end_at else None,
-                        "user_prompt": intake.user_prompt,
-                        "non_code_notes": intake.non_code_notes,
-                        "missing_fields": intake.missing_fields,
-                        "auto_run": intake.auto_run,
-                    },
-                },
-            )
-            yield sse_event("completed", {"message": ""})
+            if not intake.auto_run:
+                yield sse_event(
+                    "completed",
+                    {"message": _build_worklog_follow_up_message(intake=intake, has_data_sources=bool(data_sources))},
+                )
+                return
+
+            yield sse_event("widget", _build_worklog_widget_payload(intake=intake))
 
         return StreamingResponse(worklog_event_stream(), media_type="text/event-stream")
 
@@ -105,27 +165,6 @@ async def run_worklog_from_mixi(
     current_user: CurrentUser,
     repositories: RepositoryDep,
 ):
-    workspaces = repositories.workspaces.list_for_user(current_user.id, limit=1)
-    if workspaces:
-        workspace = workspaces[0]
-    else:
-        workspace = repositories.workspaces.create_workspace(
-            owner_user_id=current_user.id,
-            slug=f"personal-{current_user.id.hex[:12]}",
-            name=f"{current_user.display_name} 的工作区",
-            description="个人智能体工作区",
-        )
-
-    agent = repositories.agents.get_by_slug(workspace.id, "worklog-agent")
-    if agent is None:
-        agent = repositories.agents.create_agent(
-            workspace_id=workspace.id,
-            slug="worklog-agent",
-            name="工作日志 Agent",
-            description="汇总 Git 提交和非代码事项，生成工作日志草稿。",
-            config={"agent_type": "system", "workflow": "worklog"},
-        )
-        repositories.agents.update(agent, status=AgentStatus.active)
-
+    agent = _ensure_worklog_agent(current_user, repositories)
     runner = WorklogAgentRunner(repositories)
     return await runner.run(agent=agent, user=current_user, request=payload)

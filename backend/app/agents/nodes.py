@@ -143,6 +143,17 @@ def make_worklog_refinement_node(
                     branch=state["git_result"].branch,
                     commit_count=len(state["git_result"].commits),
                     non_code_notes=state["non_code_notes"],
+                    commits=[
+                        {
+                            "sha": commit.sha,
+                            "author_name": commit.author_name,
+                            "authored_at": commit.authored_at.isoformat(),
+                            "subject": commit.subject,
+                            "changed_files": commit.changed_files,
+                            "patch": commit.patch,
+                        }
+                        for commit in state["git_result"].commits
+                    ],
                 )
             )
             steps.mark_succeeded(
@@ -205,33 +216,43 @@ def compose_worklog_markdown(
         f"> 由 {agent_name} 生成，统计区间：{day_label if report_kind == 'daily' else period_label} {time_range}",
     ]
 
-    if request.user_prompt:
-        lines.extend(["", "## 工作目标", request.user_prompt.strip()])
+    lines.extend(["", "## 工作概览"])
+    if commit_count:
+        lines.append(f"- 基于 {commit_count} 条代码提交整理本次开发工作，启用 LLM 后会结合 diff 归纳主要方向、功能成果和价值。")
+    else:
+        lines.append("- 本时间范围内未检测到新的代码提交。")
 
-    lines.extend(["", "## 代码工作"])
+    lines.extend(["", "## 完成功能"])
     if git_result.commits:
         for commit in git_result.commits:
-            commit_time = commit.authored_at.astimezone().strftime("%H:%M")
-            lines.append(f"- `{commit.sha[:7]}` {commit.subject}（{commit.author_name}，{commit_time}）")
+            files = "、".join(commit.changed_files[:3])
+            suffix = f"；涉及 {files}" if files else ""
+            lines.append(f"- {commit.subject}{suffix}")
     else:
         lines.append("- 本时间范围内未检测到新的 Git 提交。")
 
-    lines.extend(["", "## 非代码工作"])
-    if non_code_notes:
-        lines.extend(f"- {note}" for note in non_code_notes)
+    lines.extend(["", "## 技术实现"])
+    if git_result.commits:
+        lines.append("- 已收集提交 diff，启用 LLM 后会基于代码变化整理关键实现点。")
     else:
-        lines.append("- 暂无补充的非代码事项。")
+        lines.append("- 暂未记录新的代码实现变化。")
+
+    lines.extend(["", "## 目标和价值"])
+    lines.append("- 暂未记录明确目标，可结合功能上下文补充。")
 
     lines.extend(
         [
             "",
-            "## 工作小结",
-            f"- 仓库：{git_result.repository_name}",
-            f"- 分支：{git_result.branch}",
-            f"- 代码提交数：{commit_count}",
-            f"- 非代码事项数：{note_count}",
-            f"- 总结：{summary}",
+            "## 风险或阻塞",
+            "- 暂未记录明确风险或阻塞。",
+            "",
+            "## 后续可扩展方向",
+            "- 暂未记录后续可扩展方向，可在草稿中补充。",
         ]
     )
+
+    if non_code_notes:
+        lines.extend(["", "## 备注"])
+        lines.extend(f"- {note}" for note in non_code_notes)
 
     return title, summary, "\n".join(lines)

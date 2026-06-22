@@ -10,6 +10,7 @@ from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.db.models import GitDataSource
+from app.schemas.mixi import MixiChatHistoryItem
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +35,7 @@ class WorklogIntakeExtractor:
         self,
         *,
         prompt: str,
-        history: list[str],
+        history: list[MixiChatHistoryItem],
         data_sources: list[GitDataSource],
         now: datetime,
     ) -> WorklogIntakeDraft:
@@ -51,7 +52,7 @@ class WorklogIntakeExtractor:
             prompt=prompt,
             history=history,
         )
-        start_at, end_at = self._resolve_time_range(extracted, now)
+        start_at, end_at = self._resolve_time_range(prompt=prompt, history=history, extracted=extracted, now=now)
         non_code_notes = normalize_notes(extracted.get("non_code_notes"))
         branch = extracted.get("branch") or self._default_branch_for(data_source_id, data_sources)
         user_prompt = str(extracted.get("user_prompt") or prompt).strip() or None
@@ -90,7 +91,7 @@ class WorklogIntakeExtractor:
         self,
         *,
         prompt: str,
-        history: list[str],
+        history: list[MixiChatHistoryItem],
         data_sources: list[GitDataSource],
         now: datetime,
     ) -> dict[str, object]:
@@ -106,9 +107,8 @@ class WorklogIntakeExtractor:
             }
             for source in data_sources
         ]
-        conversation = [{"role": "user", "content": item} for item in history]
+        conversation = [{"role": item.role, "content": item.content} for item in history]
         conversation.append({"role": "user", "content": prompt})
-
         schema = {
             "data_source_id": "string | empty",
             "repository_hint": "string | empty",
@@ -131,10 +131,9 @@ class WorklogIntakeExtractor:
                         "content": (
                             "You are a worklog intake extractor. "
                             "Return one JSON object only. "
-                            "The result must be valid JSON and must follow the requested JSON schema keys exactly. "
-                            "Never add markdown fences or commentary. "
-                            "Choose data_source_id only from the provided options. "
-                            "If a field is unknown, return an empty string, an empty array, or 'unknown'."
+                            "The result must be valid JSON and follow the schema keys exactly. "
+                            "When multiple turns mention different dates, prefer the latest explicit user date. "
+                            "Choose data_source_id only from the provided options."
                         ),
                     },
                     {
@@ -161,22 +160,14 @@ class WorklogIntakeExtractor:
 
         return self._extract_with_rules(prompt=prompt, history=history)
 
-    def _extract_with_rules(self, *, prompt: str, history: list[str]) -> dict[str, object]:
-        text = " ".join([*history, prompt]).lower()
+    def _extract_with_rules(self, *, prompt: str, history: list[MixiChatHistoryItem]) -> dict[str, object]:
+        conversation = [item.content for item in history if item.role == "user"]
         latest = prompt.strip()
-        time_range = "unknown"
-        if "今天" in text or "今日" in text:
-            time_range = "today"
-        elif "昨天" in text:
-            time_range = "yesterday"
-        elif "本周" in text or "这周" in text:
-            time_range = "this_week"
-        elif "本月" in text or "这个月" in text:
-            time_range = "this_month"
+        recent_user_text = [latest, *reversed(conversation)]
+        time_range = detect_latest_time_range(recent_user_text)
 
-        note_markers = ("另外", "还有", "并且", "以及", "补充")
         notes: list[str] = []
-        for marker in note_markers:
+        for marker in ("另外", "还有", "并且", "以及", "补充"):
             if marker in latest:
                 tail = latest.split(marker, 1)[1].strip("：:，,。 ")
                 if tail:
@@ -197,14 +188,14 @@ class WorklogIntakeExtractor:
         data_sources: list[GitDataSource],
         *,
         prompt: str,
-        history: list[str],
+        history: list[MixiChatHistoryItem],
     ) -> str | None:
         if isinstance(extracted_id, str) and any(str(source.id) == extracted_id for source in data_sources):
             return extracted_id
         if len(data_sources) == 1:
             return str(data_sources[0].id)
 
-        haystack = " ".join([*history, prompt, str(repository_hint or "")]).lower()
+        haystack = " ".join([*(item.content for item in history), prompt, str(repository_hint or "")]).lower()
         matches: list[str] = []
         for source in data_sources:
             candidates = {
@@ -217,9 +208,17 @@ class WorklogIntakeExtractor:
                 matches.append(str(source.id))
         return matches[0] if len(matches) == 1 else None
 
-    def _resolve_time_range(self, extracted: dict[str, object], now: datetime) -> tuple[datetime | None, datetime | None]:
+    def _resolve_time_range(
+        self,
+        *,
+        prompt: str,
+        history: list[MixiChatHistoryItem],
+        extracted: dict[str, object],
+        now: datetime,
+    ) -> tuple[datetime | None, datetime | None]:
         current = now.astimezone()
-        range_kind = str(extracted.get("time_range") or "unknown")
+        latest_rule_range = detect_latest_time_range([prompt, *[item.content for item in reversed(history) if item.role == "user"]])
+        range_kind = latest_rule_range if latest_rule_range != "unknown" else str(extracted.get("time_range") or "unknown")
         if range_kind == "today":
             start = datetime.combine(current.date(), time.min, current.tzinfo)
             return start, current
@@ -274,9 +273,8 @@ class WorklogIntakeExtractor:
         if non_code_notes:
             parts.append(f"已提取 {len(non_code_notes)} 项非代码事项")
         if auto_run:
-            parts.append("参数已齐全，Mixi 会直接调用工作日志 Agent。")
+            parts.append("参数已齐全，确认后将调用工作日志 Agent。")
             return "；".join(parts)
-
         if "data_source" in missing_fields and "time_range" in missing_fields:
             parts.append("我还需要确认 Git 数据源和日志时间范围。")
         elif "data_source" in missing_fields:
@@ -284,6 +282,20 @@ class WorklogIntakeExtractor:
         elif "time_range" in missing_fields:
             parts.append("我还需要确认日志的时间范围，比如今天、昨天或本周。")
         return "；".join(parts)
+
+
+def detect_latest_time_range(texts: list[str]) -> str:
+    for text in texts:
+        normalized = text.strip().lower()
+        if "本周" in normalized or "这周" in normalized:
+            return "this_week"
+        if "本月" in normalized or "这个月" in normalized:
+            return "this_month"
+        if "昨天" in normalized:
+            return "yesterday"
+        if "今天" in normalized or "今日" in normalized:
+            return "today"
+    return "unknown"
 
 
 def normalize_notes(value: object) -> list[str]:

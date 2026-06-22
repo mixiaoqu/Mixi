@@ -1,16 +1,60 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.db.models import User
+from app.schemas.mixi import MixiChatHistoryItem
+
+WORKLOG_KEYWORDS = ("工作日志", "工作日记", "日报", "周报")
+WORKLOG_SLOT_KEYWORDS = (
+    "今天",
+    "今日",
+    "昨天",
+    "本周",
+    "这周",
+    "本月",
+    "这个月",
+    "仓库",
+    "分支",
+    "补充",
+    "另外",
+    "还有",
+)
+WORKLOG_FOLLOW_UP_HINTS = (
+    "git 数据源",
+    "日志时间范围",
+    "今天、昨天还是本周",
+    "生成工作日志",
+)
 
 
-def is_worklog_request(prompt: str) -> bool:
-    normalized = prompt.strip().lower()
-    return any(keyword in normalized for keyword in ("工作日志", "工作日记", "日报"))
+def contains_worklog_keyword(text: str) -> bool:
+    normalized = text.strip().lower()
+    return any(keyword in normalized for keyword in WORKLOG_KEYWORDS)
+
+
+def is_worklog_request(prompt: str, history: Sequence[MixiChatHistoryItem] | None = None) -> bool:
+    if contains_worklog_keyword(prompt):
+        return True
+
+    if not history:
+        return False
+
+    recent_items = list(history)[-6:]
+    has_recent_worklog_context = any(contains_worklog_keyword(item.content) for item in recent_items)
+    if not has_recent_worklog_context:
+        has_recent_worklog_context = any(
+            item.role == "assistant" and any(hint in item.content.lower() for hint in WORKLOG_FOLLOW_UP_HINTS)
+            for item in recent_items
+        )
+    if not has_recent_worklog_context:
+        return False
+
+    normalized_prompt = prompt.strip().lower()
+    return any(keyword in normalized_prompt for keyword in WORKLOG_SLOT_KEYWORDS) or len(normalized_prompt) <= 24
 
 
 class MixiChatService:
