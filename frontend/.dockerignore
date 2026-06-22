@@ -1,5 +1,6 @@
 node_modules
 dist
 .tmp-*
+.npm-cache
 .env
 npm-debug.log*

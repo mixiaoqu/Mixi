@@ -2,3 +2,4 @@ backend/.env
 backend/.tmp-*
 frontend/.tmp-*
 frontend/dist/
+frontend/.npm-cache/
