@@ -1,17 +1,10 @@
+import type { WorklogWidget } from '../../lib/mixi'
+
 export type MixiMessageRole = 'user' | 'assistant' | 'system'
 
 export type MixiMessageKind = 'text' | 'widget'
 
 export type MixiMessageStatus = 'pending' | 'streaming' | 'done' | 'error'
-
-export type MixiWidgetType = 'worklog_form'
-
-export type MixiMessageWidget =
-  | {
-      type: 'worklog_form'
-      title: string
-      description: string
-    }
 
 export type MixiMessage = {
   id: string
@@ -19,7 +12,7 @@ export type MixiMessage = {
   kind: MixiMessageKind
   status: MixiMessageStatus
   content?: string
-  widget?: MixiMessageWidget
+  widget?: WorklogWidget
 }
 
 export function createUserTextMessage(id: string, content: string): MixiMessage {

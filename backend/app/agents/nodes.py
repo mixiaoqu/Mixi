@@ -1,27 +1,63 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import datetime
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from app.db.models import RunStatus
 from app.db.repositories.workflow import WorkflowRunStepRepository
 from app.schemas.worklog import WorklogGenerateRequest
+from app.services.worklog_refiner import WorklogRefinementInput, WorklogRefinementResult, WorklogRefiner
 from app.tools.base import ToolContext
 from app.tools.git_repository import GitListCommitsInput, GitListCommitsOutput, GitListCommitsTool
 
 
 class WorklogGraphState(TypedDict, total=False):
     agent_name: str
-    user_prompt: str | None
     request: WorklogGenerateRequest
     tool_context: ToolContext
     git_input: GitListCommitsInput
     git_result: GitListCommitsOutput
     non_code_notes: list[str]
+    report_kind: Literal["daily", "period"]
+    should_refine: bool
     title: str
     summary: str
     markdown: str
+
+
+def make_request_analysis_node(
+    *,
+    steps: WorkflowRunStepRepository,
+    step_id_factory: Callable[[], object],
+    llm_enabled: bool,
+) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
+    async def analyze_request(state: WorklogGraphState) -> WorklogGraphState:
+        step = step_id_factory()
+        steps.mark_running(step)
+        request = state["request"]
+        non_code_notes = normalize_non_code_notes(request.non_code_notes)
+        report_kind: Literal["daily", "period"] = (
+            "daily"
+            if request.start_at.astimezone().date() == request.end_at.astimezone().date()
+            else "period"
+        )
+        should_refine = llm_enabled and bool(non_code_notes or request.user_prompt)
+
+        steps.mark_succeeded(
+            step,
+            output_payload={
+                "report_kind": report_kind,
+                "non_code_note_count": len(non_code_notes),
+                "should_refine": should_refine,
+            },
+        )
+        return {
+            "non_code_notes": non_code_notes,
+            "report_kind": report_kind,
+            "should_refine": should_refine,
+        }
+
+    return analyze_request
 
 
 def make_git_collection_node(
@@ -45,7 +81,7 @@ def make_git_collection_node(
             )
             return {
                 "git_result": git_result,
-                "non_code_notes": normalize_non_code_notes(state["request"].non_code_notes),
+                "should_refine": state.get("should_refine", False) or bool(git_result.commits),
             }
         except Exception as exc:
             steps.mark_failed(step, error_message=str(exc))
@@ -68,6 +104,7 @@ def make_worklog_composer_node(
                 request=state["request"],
                 git_result=state["git_result"],
                 non_code_notes=state["non_code_notes"],
+                report_kind=state["report_kind"],
             )
             steps.mark_succeeded(
                 step,
@@ -77,11 +114,7 @@ def make_worklog_composer_node(
                     "status": RunStatus.succeeded.value,
                 },
             )
-            return {
-                "title": title,
-                "summary": summary,
-                "markdown": markdown,
-            }
+            return {"title": title, "summary": summary, "markdown": markdown}
         except Exception as exc:
             steps.mark_failed(step, error_message=str(exc))
             raise
@@ -89,13 +122,55 @@ def make_worklog_composer_node(
     return compose_worklog
 
 
+def make_worklog_refinement_node(
+    *,
+    refiner: WorklogRefiner,
+    steps: WorkflowRunStepRepository,
+    step_id_factory: Callable[[], object],
+) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
+    async def refine_worklog(state: WorklogGraphState) -> WorklogGraphState:
+        step = step_id_factory()
+        steps.mark_running(step)
+        try:
+            refinement = await refiner.refine(
+                WorklogRefinementInput(
+                    agent_name=state["agent_name"],
+                    title=state["title"],
+                    summary=state["summary"],
+                    markdown=state["markdown"],
+                    user_prompt=state["request"].user_prompt,
+                    repository_name=state["git_result"].repository_name,
+                    branch=state["git_result"].branch,
+                    commit_count=len(state["git_result"].commits),
+                    non_code_notes=state["non_code_notes"],
+                )
+            )
+            steps.mark_succeeded(
+                step,
+                output_payload={
+                    "title": refinement.title,
+                    "summary": refinement.summary,
+                    "refined": True,
+                },
+            )
+            return {
+                "title": refinement.title,
+                "summary": refinement.summary,
+                "markdown": refinement.markdown,
+            }
+        except Exception as exc:
+            steps.mark_failed(step, error_message=str(exc))
+            return {}
+
+    return refine_worklog
+
+
+def route_after_compose(state: WorklogGraphState) -> str:
+    return "refine_worklog" if state.get("should_refine") else "end"
+
+
 def normalize_non_code_notes(notes: list[str]) -> list[str]:
-    normalized: list[str] = []
-    for note in notes:
-        stripped = note.strip()
-        if stripped:
-            normalized.append(stripped)
-    return normalized
+    return [note.strip() for note in notes if note.strip()]
 
 
 def compose_worklog_markdown(
@@ -104,28 +179,30 @@ def compose_worklog_markdown(
     request: WorklogGenerateRequest,
     git_result: GitListCommitsOutput,
     non_code_notes: list[str],
+    report_kind: Literal["daily", "period"],
 ) -> tuple[str, str, str]:
     start_local = request.start_at.astimezone()
     end_local = request.end_at.astimezone()
     day_label = start_local.strftime("%Y-%m-%d")
+    period_label = f"{start_local.strftime('%Y-%m-%d')} 至 {end_local.strftime('%Y-%m-%d')}"
     time_range = f"{start_local.strftime('%H:%M')} - {end_local.strftime('%H:%M')}"
     commit_count = len(git_result.commits)
     note_count = len(non_code_notes)
 
     summary_parts: list[str] = []
-    if commit_count > 0:
+    if commit_count:
         summary_parts.append(f"整理了 {commit_count} 条代码提交")
-    if note_count > 0:
+    if note_count:
         summary_parts.append(f"补充了 {note_count} 项非代码事项")
     if not summary_parts:
-        summary_parts.append("本时段未检测到新的代码提交，已保留人工补充入口")
-    summary = "，".join(summary_parts) + "。"
-    title = f"{day_label} 工作日志"
+        summary_parts.append("本次时间范围内未检测到新的代码提交，已保留人工补充入口")
 
+    summary = "，".join(summary_parts) + "。"
+    title = f"{day_label} 工作日志" if report_kind == "daily" else f"{period_label} 工作记录"
     lines = [
         f"# {title}",
         "",
-        f"> 由 {agent_name} 生成，统计区间：{day_label} {time_range}",
+        f"> 由 {agent_name} 生成，统计区间：{day_label if report_kind == 'daily' else period_label} {time_range}",
     ]
 
     if request.user_prompt:
@@ -137,12 +214,11 @@ def compose_worklog_markdown(
             commit_time = commit.authored_at.astimezone().strftime("%H:%M")
             lines.append(f"- `{commit.sha[:7]}` {commit.subject}（{commit.author_name}，{commit_time}）")
     else:
-        lines.append("- 本时段未检测到新的 Git 提交。")
+        lines.append("- 本时间范围内未检测到新的 Git 提交。")
 
     lines.extend(["", "## 非代码工作"])
     if non_code_notes:
-        for note in non_code_notes:
-            lines.append(f"- {note}")
+        lines.extend(f"- {note}" for note in non_code_notes)
     else:
         lines.append("- 暂无补充的非代码事项。")
 

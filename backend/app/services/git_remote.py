@@ -18,6 +18,8 @@ from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
+GIT_OUTPUT_ENCODING = "utf-8"
+
 
 class GitConnectionError(Exception):
     pass
@@ -128,6 +130,8 @@ def _run_git(args: list[str], *, env: dict[str, str], timeout: int, cwd: Path | 
             cwd=cwd,
             env=env,
             text=True,
+            encoding=GIT_OUTPUT_ENCODING,
+            errors="replace",
             timeout=timeout,
         )
     except FileNotFoundError as exc:
@@ -136,7 +140,7 @@ def _run_git(args: list[str], *, env: dict[str, str], timeout: int, cwd: Path | 
         raise GitConnectionError("读取仓库超时") from exc
     if result.returncode != 0:
         raise GitConnectionError("无法读取仓库，请检查地址、分支和凭证")
-    return result.stdout
+    return result.stdout or ""
 
 
 def inspect_remote(repository_url: str, auth_type: str, credential: str | None) -> GitRemoteInfo:

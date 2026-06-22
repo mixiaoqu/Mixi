@@ -37,6 +37,8 @@ export type IconName =
   | 'git-branch'
   | 'message-square'
   | 'compass'
+  | 'cpu'
+  | 'library'
 
 export function Icon({ name, className = '' }: { name: IconName; className?: string }) {
   const common = {
@@ -280,6 +282,27 @@ export function Icon({ name, className = '' }: { name: IconName; className?: str
       <>
         <circle cx="12" cy="12" r="10" />
         <path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12Z" />
+      </>
+    ),
+    cpu: (
+      <>
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+        <path d="M9 1v3" />
+        <path d="M15 1v3" />
+        <path d="M9 20v3" />
+        <path d="M15 20v3" />
+        <path d="M20 9h3" />
+        <path d="M20 14h3" />
+        <path d="M1 9h3" />
+        <path d="M1 14h3" />
+      </>
+    ),
+    library: (
+      <>
+        <path d="m16 6 4 14" />
+        <path d="M12 6v14" />
+        <path d="M8 8v12" />
+        <path d="M4 4v16" />
       </>
     ),
   }

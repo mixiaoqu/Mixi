@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 
 import type { MixiMessage } from '../../features/mixi/types'
 import { Icon } from '../Icon'
+import WorklogForm from './WorklogForm'
 import './mixi-task-console.css'
 
 type MixiTaskConsoleProps = {
   onSubmit: (prompt: string) => void | Promise<void>
   onGenerateWorkLog: () => void
   onBrowseWorkflows: () => void
+  onOpenDataSources: () => void
   messages: MixiMessage[]
   isStreaming: boolean
   userInitial: string
@@ -32,6 +34,7 @@ export default function MixiTaskConsole({
   onSubmit,
   onGenerateWorkLog,
   onBrowseWorkflows,
+  onOpenDataSources,
   messages,
   isStreaming,
   userInitial,
@@ -187,10 +190,12 @@ export default function MixiTaskConsole({
                         ) : null}
 
                         {message.kind === 'widget' && message.widget ? (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                            <p className="text-sm font-bold text-slate-900">{message.widget.title}</p>
-                            <p className="mt-1 text-sm leading-6 text-slate-600">{message.widget.description}</p>
-                          </div>
+                          <WorklogForm
+                            title={message.widget.title}
+                            description={message.widget.description}
+                            draft={message.widget.draft}
+                            onOpenDataSources={onOpenDataSources}
+                          />
                         ) : message.status === 'error' ? (
                           <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{message.content}</p>
                         ) : (

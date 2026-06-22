@@ -8,6 +8,11 @@ from app.core.config import settings
 from app.db.models import User
 
 
+def is_worklog_request(prompt: str) -> bool:
+    normalized = prompt.strip().lower()
+    return any(keyword in normalized for keyword in ("工作日志", "工作日记", "日报"))
+
+
 class MixiChatService:
     def __init__(self, client: AsyncOpenAI):
         self.client = client

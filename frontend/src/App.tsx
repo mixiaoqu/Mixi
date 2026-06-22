@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Icon } from './components/Icon'
 import MixiTaskConsole from './components/mixi/MixiTaskConsole'
@@ -8,24 +8,20 @@ import {
   createUserTextMessage,
   type MixiMessage,
 } from './features/mixi/types'
-import { knowledgeBases, workflowCategories, workflowTemplates } from './features/workflows/data'
-import { useWorkflowPreview } from './features/workflows/useWorkflowPreview'
-import type { WorkflowTemplate } from './features/workflows/types'
+import { knowledgeBases } from './features/workflows/data'
 import { logout, restoreSession, type AuthUser } from './lib/auth'
-import { streamMixiReply } from './lib/mixi'
+import { streamMixiReply, type MixiHistoryItem } from './lib/mixi'
 import DataSourcesPage from './pages/DataSourcesPage'
+import AgentsPage from './pages/AgentsPage'
 import KnowledgePage from './pages/KnowledgePage'
 import LoginPage from './pages/LoginPage'
 import SettingsPage from './pages/SettingsPage'
-import WorkflowTemplatesPage from './pages/WorkflowTemplatesPage'
-import WorkflowWorkspacePage from './pages/WorkflowWorkspacePage'
 
-type View = 'home' | 'agents' | 'workspace' | 'knowledge' | 'dataSources' | 'settings'
-type PrimaryView = 'home' | 'agents' | 'knowledge'
+type View = 'home' | 'agents' | 'knowledge' | 'dataSources' | 'settings'
+type PrimaryView = 'home' | 'agents' | 'knowledge' | 'dataSources'
 
 function primaryViewFor(view: View): PrimaryView | null {
-  if (view === 'workspace') return 'agents'
-  if (view === 'home' || view === 'agents' || view === 'knowledge') return view
+  if (view === 'home' || view === 'agents' || view === 'knowledge' || view === 'dataSources') return view
   return null
 }
 
@@ -39,13 +35,8 @@ export default function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement>(null)
   const [activeView, setActiveView] = useState<View>('home')
-  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate>(workflowTemplates[0])
-  const [activeCategory, setActiveCategory] = useState('全部')
-  const [searchQuery, setSearchQuery] = useState('')
   const [mixiMessages, setMixiMessages] = useState<MixiMessage[]>([])
   const [mixiStreaming, setMixiStreaming] = useState(false)
-
-  const workflowPreview = useWorkflowPreview(selectedTemplate)
 
   useEffect(() => {
     let active = true
@@ -85,21 +76,6 @@ export default function App() {
     }
   }, [accountMenuOpen])
 
-  const filteredTemplates = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-
-    return workflowTemplates.filter((template) => {
-      const categoryMatch = activeCategory === '全部' || template.category === activeCategory
-      const queryMatch =
-        !query ||
-        template.title.toLowerCase().includes(query) ||
-        template.category.toLowerCase().includes(query) ||
-        template.tags.some((tag) => tag.toLowerCase().includes(query))
-
-      return categoryMatch && queryMatch
-    })
-  }, [activeCategory, searchQuery])
-
   async function handleLogout() {
     setAccountMenuOpen(false)
 
@@ -111,21 +87,13 @@ export default function App() {
     }
   }
 
-  function openTemplate(template: WorkflowTemplate) {
-    setSelectedTemplate(template)
-    workflowPreview.resetRun(true)
-    setActiveView('workspace')
-  }
-
   function openWorkflowCenter() {
-    setSearchQuery('')
-    setActiveCategory('全部')
     setActiveView('agents')
   }
 
-  function openWorkLog() {
-    const workLog = workflowTemplates.find((template) => template.id === 'work-log')
-    if (workLog) openTemplate(workLog)
+  function handOffWorklogToMixi() {
+    setActiveView('home')
+    void handleMixiTask('帮我生成今天的工作日志')
   }
 
   function handleNewConversation() {
@@ -137,7 +105,14 @@ export default function App() {
 
   async function handleMixiTask(prompt: string) {
     const trimmedPrompt = prompt.trim()
-    if (!trimmedPrompt) return
+    if (!trimmedPrompt || mixiStreaming) return
+    const history: MixiHistoryItem[] = mixiMessages
+      .filter((message) => message.kind === 'text' && message.content?.trim())
+      .slice(-8)
+      .map((message) => ({
+        role: message.role === 'assistant' ? 'assistant' : 'user',
+        content: message.content!.trim(),
+      }))
 
     const userMessage = createUserTextMessage(createMessageId(), trimmedPrompt)
     const assistantMessageId = createMessageId()
@@ -169,7 +144,16 @@ export default function App() {
             ),
           )
         },
-      })
+        onWidget: (widget) => {
+          setMixiMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, kind: 'widget', widget, content: undefined, status: 'done' }
+                : message,
+            ),
+          )
+        },
+      }, history)
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'Mixi 暂时无法响应，请稍后重试。'
 
@@ -211,8 +195,6 @@ export default function App() {
           <WorkspaceSidebar
             activeId={primaryViewFor(activeView)}
             onChange={(view) => {
-              setSearchQuery('')
-              setActiveCategory('全部')
               setActiveView(view)
             }}
             onNewConversation={handleNewConversation}
@@ -342,39 +324,17 @@ export default function App() {
               isStreaming={mixiStreaming}
               messages={mixiMessages}
               onBrowseWorkflows={openWorkflowCenter}
-              onGenerateWorkLog={openWorkLog}
+              onGenerateWorkLog={handOffWorklogToMixi}
+              onOpenDataSources={() => setActiveView('dataSources')}
               onSubmit={handleMixiTask}
               userInitial={currentUser?.display_name?.charAt(0).toUpperCase() || 'U'}
             />
           )}
 
           {activeView === 'agents' && (
-            <WorkflowTemplatesPage
-              activeCategory={activeCategory}
-              categories={workflowCategories}
-              onOpenTemplate={openTemplate}
-              onSearchChange={setSearchQuery}
-              onSelectCategory={setActiveCategory}
-              searchQuery={searchQuery}
-              templates={filteredTemplates}
-            />
-          )}
-
-          {activeView === 'workspace' && (
-            <WorkflowWorkspacePage
-              currentStep={workflowPreview.currentStep}
-              formData={workflowPreview.formData}
-              logs={workflowPreview.logs}
-              onBack={openWorkflowCenter}
-              onFailRunForPreview={workflowPreview.failRunForPreview}
-              onFillDemoData={workflowPreview.fillDemoData}
-              onFormDataChange={workflowPreview.setFormData}
-              onResetRun={() => workflowPreview.resetRun()}
-              onStartRun={workflowPreview.startRun}
-              output={workflowPreview.output}
-              requiredInputFilled={workflowPreview.requiredInputFilled}
-              selectedTemplate={selectedTemplate}
-              status={workflowPreview.status}
+            <AgentsPage
+              onHandOffWorklog={handOffWorklogToMixi}
+              onOpenDataSources={() => setActiveView('dataSources')}
             />
           )}
 

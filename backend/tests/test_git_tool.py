@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
-from app.services.git_remote import GitCommit
+from app.services.git_remote import GIT_OUTPUT_ENCODING, GitCommit, _run_git
 from app.tools.base import ToolContext, ToolPermissionError
 from app.tools.git_repository import GitListCommitsInput, GitListCommitsTool
 
@@ -81,3 +81,15 @@ class GitListCommitsToolTests(IsolatedAsyncioTestCase):
         self.assertEqual(result.repository_name, "agent-platform")
         self.assertEqual(result.branch, "main")
         self.assertEqual(result.commits[0].subject, "Add Git tool")
+
+
+class GitRemoteProcessTests(TestCase):
+    def test_run_git_reads_output_as_utf8_and_handles_empty_stdout(self) -> None:
+        completed_process = SimpleNamespace(returncode=0, stdout=None)
+
+        with patch("app.services.git_remote.subprocess.run", return_value=completed_process) as run_mock:
+            result = _run_git(["status"], env={}, timeout=5)
+
+        self.assertEqual(result, "")
+        self.assertEqual(run_mock.call_args.kwargs["encoding"], GIT_OUTPUT_ENCODING)
+        self.assertEqual(run_mock.call_args.kwargs["errors"], "replace")
