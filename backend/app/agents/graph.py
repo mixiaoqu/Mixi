@@ -3,6 +3,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.nodes import (
+    RunEventSink,
     WorklogGraphState,
     make_git_collection_node,
     make_request_analysis_node,
@@ -40,6 +41,7 @@ class WorklogAgentRunner:
         agent: Agent,
         user: User,
         request: WorklogGenerateRequest,
+        event_sink: RunEventSink | None = None,
     ) -> WorklogGenerateResponse:
         run = self.repositories.workflow_runs.create_run(
             workspace_id=agent.workspace_id,
@@ -50,6 +52,15 @@ class WorklogAgentRunner:
             input_payload=request.model_dump(mode="json"),
         )
         self.repositories.workflow_runs.mark_running(run)
+        if event_sink is not None:
+            await event_sink(
+                "run.started",
+                {
+                    "run_id": str(run.id),
+                    "capability": "worklog.generate",
+                    "status": RunStatus.running.value,
+                },
+            )
 
         analyze_step = self.repositories.workflow_run_steps.create_step(
             workflow_run_id=run.id,
@@ -78,7 +89,13 @@ class WorklogAgentRunner:
                 step_name="润色日志内容",
             )
 
-        graph = self._build_graph(analyze_step=analyze_step, git_step=git_step, compose_step=compose_step, refine_step=refine_step)
+        graph = self._build_graph(
+            analyze_step=analyze_step,
+            git_step=git_step,
+            compose_step=compose_step,
+            refine_step=refine_step,
+            event_sink=event_sink,
+        )
         initial_state: WorklogGraphState = {
             "agent_name": agent.name,
             "request": request,
@@ -100,9 +117,13 @@ class WorklogAgentRunner:
             result = await graph.ainvoke(initial_state)
         except ToolError as exc:
             self.repositories.workflow_runs.mark_failed(run, error_message=str(exc))
+            if event_sink is not None:
+                await event_sink("run.failed", {"run_id": str(run.id), "detail": str(exc)})
             raise
         except Exception as exc:
             self.repositories.workflow_runs.mark_failed(run, error_message=str(exc))
+            if event_sink is not None:
+                await event_sink("run.failed", {"run_id": str(run.id), "detail": str(exc)})
             raise
 
         self.repositories.workflow_runs.mark_succeeded(
@@ -116,7 +137,7 @@ class WorklogAgentRunner:
             },
         )
 
-        return WorklogGenerateResponse(
+        response = WorklogGenerateResponse(
             workflow_run_id=run.id,
             agent_id=agent.id,
             workspace_id=agent.workspace_id,
@@ -137,8 +158,19 @@ class WorklogAgentRunner:
             ],
             non_code_notes=result["non_code_notes"],
         )
+        if event_sink is not None:
+            await event_sink("artifact.created", {"artifact": response.model_dump(mode="json")})
+        return response
 
-    def _build_graph(self, *, analyze_step: object, git_step: object, compose_step: object, refine_step: object | None):
+    def _build_graph(
+        self,
+        *,
+        analyze_step: object,
+        git_step: object,
+        compose_step: object,
+        refine_step: object | None,
+        event_sink: RunEventSink | None,
+    ):
         graph = StateGraph(WorklogGraphState)
         graph.add_node(
             "analyze_request",
@@ -146,6 +178,7 @@ class WorklogAgentRunner:
                 steps=self.repositories.workflow_run_steps,
                 step_id_factory=lambda: analyze_step,
                 llm_enabled=self.llm_refiner is not None,
+                event_sink=event_sink,
             ),
         )
         graph.add_node(
@@ -154,6 +187,7 @@ class WorklogAgentRunner:
                 git_tool=self.git_tool,
                 steps=self.repositories.workflow_run_steps,
                 step_id_factory=lambda: git_step,
+                event_sink=event_sink,
             ),
         )
         graph.add_node(
@@ -161,6 +195,7 @@ class WorklogAgentRunner:
             make_worklog_composer_node(
                 steps=self.repositories.workflow_run_steps,
                 step_id_factory=lambda: compose_step,
+                event_sink=event_sink,
             ),
         )
         if self.llm_refiner is not None and refine_step is not None:
@@ -170,6 +205,7 @@ class WorklogAgentRunner:
                     refiner=self.llm_refiner,
                     steps=self.repositories.workflow_run_steps,
                     step_id_factory=lambda: refine_step,
+                    event_sink=event_sink,
                 ),
             )
 

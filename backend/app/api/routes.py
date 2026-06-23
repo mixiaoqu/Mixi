@@ -4,6 +4,7 @@ from app.api.endpoints.agents import router as agents_router
 from app.api.endpoints.auth import router as auth_router
 from app.api.endpoints.git_data_sources import router as git_data_sources_router
 from app.api.endpoints.mixi import router as mixi_router
+from app.api.endpoints.runs import router as runs_router
 from app.api.endpoints.users import router as users_router
 from app.api.endpoints.workspaces import router as workspaces_router
 
@@ -23,6 +24,7 @@ def get_meta() -> dict[str, object]:
 v1_router.include_router(auth_router)
 v1_router.include_router(git_data_sources_router)
 v1_router.include_router(mixi_router)
+v1_router.include_router(runs_router)
 v1_router.include_router(users_router)
 v1_router.include_router(workspaces_router)
 v1_router.include_router(agents_router)

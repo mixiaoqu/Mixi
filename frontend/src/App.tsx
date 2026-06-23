@@ -10,18 +10,19 @@ import {
 } from './features/mixi/types'
 import { knowledgeBases } from './features/workflows/data'
 import { logout, restoreSession, type AuthUser } from './lib/auth'
-import { streamMixiReply, type MixiHistoryItem } from './lib/mixi'
+import { createMixiConversationState, streamMixiReply, type MixiConversationState, type MixiHistoryItem } from './lib/mixi'
 import DataSourcesPage from './pages/DataSourcesPage'
 import AgentsPage from './pages/AgentsPage'
 import KnowledgePage from './pages/KnowledgePage'
 import LoginPage from './pages/LoginPage'
+import RunsPage from './pages/RunsPage'
 import SettingsPage from './pages/SettingsPage'
 
-type View = 'home' | 'agents' | 'knowledge' | 'dataSources' | 'settings'
-type PrimaryView = 'home' | 'agents' | 'knowledge' | 'dataSources'
+type View = 'home' | 'agents' | 'runs' | 'knowledge' | 'dataSources' | 'settings'
+type PrimaryView = 'home' | 'agents' | 'runs' | 'knowledge' | 'dataSources'
 
 function primaryViewFor(view: View): PrimaryView | null {
-  if (view === 'home' || view === 'agents' || view === 'knowledge' || view === 'dataSources') return view
+  if (view === 'home' || view === 'agents' || view === 'runs' || view === 'knowledge' || view === 'dataSources') return view
   return null
 }
 
@@ -39,6 +40,7 @@ export default function App() {
   const [mixiStreaming, setMixiStreaming] = useState(false)
   const [mixiPresetPrompt, setMixiPresetPrompt] = useState('')
   const [mixiPresetNonce, setMixiPresetNonce] = useState(0)
+  const [mixiConversationState, setMixiConversationState] = useState<MixiConversationState>(createMixiConversationState)
 
   useEffect(() => {
     let active = true
@@ -104,6 +106,7 @@ export default function App() {
     setMixiMessages([])
     setMixiStreaming(false)
     setMixiPresetPrompt('')
+    setMixiConversationState(createMixiConversationState())
     setAccountMenuOpen(false)
   }
 
@@ -132,35 +135,44 @@ export default function App() {
     try {
       await streamMixiReply(
         trimmedPrompt,
-        {
-          onChunk: (delta) => {
+        (event) => {
+          if (event.type === 'conversation.state') {
+            setMixiConversationState(event.state)
+          } else if (event.type === 'message.delta') {
             setMixiMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessageId
-                  ? { ...message, content: `${message.content ?? ''}${delta}`, status: 'streaming' }
+                  ? { ...message, content: `${message.content ?? ''}${event.delta}`, status: 'streaming' }
                   : message,
               ),
             )
-          },
-          onCompleted: (message) => {
+          } else if (event.type === 'message.completed') {
             setMixiMessages((current) =>
               current.map((item) =>
                 item.id === assistantMessageId
-                  ? { ...item, content: message || item.content, status: 'done' }
+                  ? { ...item, content: event.message || item.content, status: 'done' }
                   : item,
               ),
             )
-          },
-          onWidget: (widget) => {
+          } else if (event.type === 'task.proposed') {
             setMixiMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessageId
-                  ? { ...message, kind: 'widget', widget, content: undefined, status: 'done' }
+                  ? { ...message, kind: 'task', task: event.task, content: undefined, status: 'done' }
                   : message,
               ),
             )
-          },
+          } else if (event.type === 'run.failed') {
+            setMixiMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, content: event.detail, status: 'error' }
+                  : message,
+              ),
+            )
+          }
         },
+        mixiConversationState,
         history,
       )
     } catch (error) {
@@ -350,6 +362,7 @@ export default function App() {
           ) : null}
 
           {activeView === 'knowledge' ? <KnowledgePage knowledgeBases={knowledgeBases} /> : null}
+          {activeView === 'runs' ? <RunsPage /> : null}
           {activeView === 'dataSources' ? <DataSourcesPage /> : null}
           {activeView === 'settings' && currentUser ? <SettingsPage user={currentUser} /> : null}
         </main>

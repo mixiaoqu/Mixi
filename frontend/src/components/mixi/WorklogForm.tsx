@@ -1,14 +1,15 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent } from 'react'
 
-import type { WorklogWidgetDraft } from '../../lib/mixi'
-import { generateWorklog, type WorklogGenerateResult } from '../../lib/mixi'
+import type { WorklogTaskDraft } from '../../lib/mixi'
+import { streamWorklogRun, type RunStepEvent, type WorklogGenerateResult } from '../../lib/mixi'
 import { listGitDataSources, type GitDataSource } from '../../lib/gitDataSources'
 import { Icon } from '../Icon'
+import WorklogPreview from './WorklogPreview'
 
-type WorklogFormProps = {
+type WorklogTaskCardProps = {
   title?: string
   description: string
-  draft?: WorklogWidgetDraft
+  draft?: WorklogTaskDraft
   onOpenDataSources: () => void
 }
 
@@ -22,20 +23,23 @@ function dateValueFromIso(value: string | null | undefined) {
   return value.slice(0, 10)
 }
 
-function notesValueFromDraft(draft?: WorklogWidgetDraft) {
+function notesValueFromDraft(draft?: WorklogTaskDraft) {
   return draft?.non_code_notes?.join('\n') ?? ''
 }
 
-export default function WorklogForm({ title, description, draft, onOpenDataSources }: WorklogFormProps) {
+export default function WorklogTaskCard({ title, description, draft, onOpenDataSources }: WorklogTaskCardProps) {
   const [sources, setSources] = useState<GitDataSource[]>([])
   const [sourceId, setSourceId] = useState(draft?.data_source_id ?? '')
   const [startDate, setStartDate] = useState(dateValueFromIso(draft?.start_at))
   const [endDate, setEndDate] = useState(dateValueFromIso(draft?.end_at ?? draft?.start_at))
   const [notes, setNotes] = useState(notesValueFromDraft(draft))
-  const [status, setStatus] = useState<'loading' | 'idle' | 'running' | 'done'>('loading')
+  const [status, setStatus] = useState<'loading' | 'idle' | 'running' | 'done' | 'failed'>('loading')
   const [error, setError] = useState('')
   const [result, setResult] = useState<WorklogGenerateResult | null>(null)
+  const [runId, setRunId] = useState('')
+  const [steps, setSteps] = useState<RunStepEvent[]>([])
   const [draftMarkdown, setDraftMarkdown] = useState('')
+  const [resultView, setResultView] = useState<'preview' | 'edit'>('preview')
   const [copied, setCopied] = useState(false)
   const autoSubmittedRef = useRef(false)
 
@@ -76,6 +80,8 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
 
     setStatus('running')
     setError('')
+    setRunId('')
+    setSteps([])
 
     const start = new Date(`${startDate}T00:00:00`)
     const end = endDate === localDateValue()
@@ -84,7 +90,8 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
     const dateRangeLabel = startDate === endDate ? startDate : `${startDate} 至 ${endDate}`
 
     try {
-      const response = await generateWorklog({
+      let terminalEventReceived = false
+      await streamWorklogRun({
         data_source_id: selectedSource.id,
         start_at: start.toISOString(),
         end_at: end.toISOString(),
@@ -92,13 +99,32 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
         commit_limit: 50,
         user_prompt: draft?.user_prompt ?? `整理 ${dateRangeLabel} 的工作进展`,
         non_code_notes: notes.split('\n').map((note) => note.trim()).filter(Boolean),
+      }, (event) => {
+        if (event.type === 'run.started') {
+          setRunId(event.run_id)
+        } else if (event.type === 'run.step') {
+          setSteps((current) => {
+            const existingIndex = current.findIndex((step) => step.step_key === event.step.step_key)
+            if (existingIndex === -1) return [...current, event.step]
+            return current.map((step, index) => index === existingIndex ? event.step : step)
+          })
+        } else if (event.type === 'artifact.created') {
+          terminalEventReceived = true
+          setResult(event.artifact)
+          setDraftMarkdown(event.artifact.markdown)
+          setResultView('preview')
+          setStatus('done')
+        } else if (event.type === 'run.failed') {
+          terminalEventReceived = true
+          setRunId((current) => event.run_id ?? current)
+          setError(event.detail)
+          setStatus('failed')
+        }
       })
-      setResult(response)
-      setDraftMarkdown(response.markdown)
-      setStatus('done')
+      if (!terminalEventReceived) throw new Error('任务流提前结束，请重试。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '工作日志生成失败，请稍后重试。')
-      setStatus('idle')
+      setStatus('failed')
     }
   }
 
@@ -138,21 +164,46 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
             </p>
             <p className="mt-1 text-xs text-emerald-700">读取 {result.commit_count} 条提交，分支 {result.branch}</p>
           </div>
-          <button
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-            onClick={() => void copyDraft()}
-            type="button"
-          >
-            <Icon className="h-3.5 w-3.5" name={copied ? 'check' : 'copy'} />
-            {copied ? '已复制' : '复制日志'}
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg bg-white p-1 ring-1 ring-slate-200" role="group" aria-label="日志查看方式">
+              <button
+                aria-pressed={resultView === 'preview'}
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition ${resultView === 'preview' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                onClick={() => setResultView('preview')}
+                type="button"
+              >
+                <Icon className="h-3.5 w-3.5" name="eye" />
+                预览
+              </button>
+              <button
+                aria-pressed={resultView === 'edit'}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-bold transition ${resultView === 'edit' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                onClick={() => setResultView('edit')}
+                type="button"
+              >
+                编辑
+              </button>
+            </div>
+            <button
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+              onClick={() => void copyDraft()}
+              type="button"
+            >
+              <Icon className="h-3.5 w-3.5" name={copied ? 'check' : 'copy'} />
+              {copied ? '已复制' : '复制'}
+            </button>
+          </div>
         </div>
-        <textarea
-          aria-label="工作日志草稿"
-          className="min-h-80 w-full resize-y bg-white p-4 font-mono text-sm leading-6 text-slate-700 outline-none focus:bg-slate-50"
-          onChange={(event) => setDraftMarkdown(event.target.value)}
-          value={draftMarkdown}
-        />
+        {resultView === 'preview' ? (
+          <WorklogPreview markdown={draftMarkdown} />
+        ) : (
+          <textarea
+            aria-label="编辑工作日志 Markdown"
+            className="min-h-80 w-full resize-y bg-white p-5 font-mono text-sm leading-6 text-slate-700 outline-none focus:bg-slate-50 sm:p-6"
+            onChange={(event) => setDraftMarkdown(event.target.value)}
+            value={draftMarkdown}
+          />
+        )}
       </div>
     )
   }
@@ -173,6 +224,32 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
         <div className="mt-5 flex items-center gap-2 py-4 text-sm font-semibold text-slate-500">
           <Icon className="h-4 w-4 animate-spin" name="loader" />
           正在读取可用数据源
+        </div>
+      ) : status === 'running' ? (
+        <div className="mt-5 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-50 text-indigo-700">
+              <Icon className="h-4 w-4 animate-spin" name="loader" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-900">工作日志生成中</p>
+              <p className="mt-0.5 text-xs text-slate-500">{runId ? `运行编号 ${runId.slice(0, 8)}` : '正在创建运行任务'}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2 border-t border-slate-100 pt-4" aria-live="polite">
+            {steps.length === 0 ? (
+              <p className="text-xs font-semibold text-slate-500">正在启动 Agent…</p>
+            ) : steps.map((step) => (
+              <div className="flex items-center gap-2 text-xs" key={step.step_key}>
+                <Icon
+                  className={`h-3.5 w-3.5 ${step.status === 'running' ? 'animate-spin text-indigo-600' : step.status === 'failed' ? 'text-rose-600' : 'text-emerald-600'}`}
+                  name={step.status === 'running' ? 'loader' : step.status === 'failed' ? 'x' : 'check'}
+                />
+                <span className={step.status === 'running' ? 'font-bold text-slate-800' : 'font-semibold text-slate-600'}>{step.step_name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : sources.length === 0 ? (
         <div className="mt-5 rounded-xl bg-white p-4 ring-1 ring-slate-200">
@@ -237,17 +314,23 @@ export default function WorklogForm({ title, description, draft, onOpenDataSourc
             />
           </label>
 
-          {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700" role="alert">{error}</p> : null}
+          {error ? (
+            <div className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert">
+              <p className="font-bold">任务执行失败</p>
+              <p className="mt-1 font-semibold">{error}</p>
+              {runId ? <p className="mt-1 text-rose-600">运行编号 {runId.slice(0, 8)}</p> : null}
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
             <p className="text-xs font-semibold text-slate-500">运行前仅授权所选仓库与日期范围</p>
             <button
               className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              disabled={!isDateRangeValid || status === 'running'}
+              disabled={!isDateRangeValid}
               type="submit"
             >
-              <Icon className={`h-4 w-4 ${status === 'running' ? 'animate-spin' : ''}`} name={status === 'running' ? 'loader' : 'spark'} />
-              {status === 'running' ? 'Agent 正在生成' : draft?.auto_run ? '重新生成' : '确认并生成'}
+              <Icon className="h-4 w-4" name="spark" />
+              {status === 'failed' ? '重试生成' : draft?.auto_run ? '重新生成' : '确认并生成'}
             </button>
           </div>
         </div>

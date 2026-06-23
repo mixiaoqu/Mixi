@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -12,9 +14,9 @@ from app.api.auth import CurrentUser
 from app.api.deps import RepositoryDep
 from app.core.llm import get_openai_client
 from app.db.models import AgentStatus
-from app.schemas.mixi import MixiChatRequest
+from app.schemas.mixi import MixiChatRequest, MixiConversationState
 from app.schemas.worklog import WorklogGenerateRequest, WorklogGenerateResponse
-from app.services.mixi import MixiChatService, is_worklog_request
+from app.services.mixi import MixiChatService, MixiRouter
 from app.services.worklog_intake import WorklogIntakeExtractor
 
 
@@ -23,6 +25,16 @@ router = APIRouter(tags=["mixi"])
 
 def sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _cleared_state(state: MixiConversationState) -> MixiConversationState:
+    return state.model_copy(
+        update={
+            "active_intent": None,
+            "awaiting_confirmation": False,
+            "missing_fields": [],
+        }
+    )
 
 
 def _ensure_worklog_agent(current_user: CurrentUser, repositories: RepositoryDep):
@@ -78,9 +90,10 @@ def _build_worklog_follow_up_message(*, intake, has_data_sources: bool) -> str:
     return f"{prefix}。{question}" if prefix else question
 
 
-def _build_worklog_widget_payload(*, intake) -> dict[str, object]:
+def _build_worklog_proposal_payload(*, intake) -> dict[str, object]:
     return {
-        "type": "worklog_form",
+        "type": "worklog",
+        "capability": "worklog.generate",
         "title": "确认工作日志参数",
         "description": intake.description,
         "draft": {
@@ -105,48 +118,120 @@ async def stream_mixi_chat(
     if not payload.prompt.strip():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Prompt cannot be empty")
 
-    if is_worklog_request(payload.prompt, payload.history):
+    try:
+        client = get_openai_client()
+    except RuntimeError:
+        client = None
+
+    decision = await MixiRouter(client).route(prompt=payload.prompt, state=payload.state)
+
+    if decision.action == "cancel":
+        async def cancelled_event_stream() -> AsyncIterator[str]:
+            yield sse_event("conversation.state", _cleared_state(payload.state).model_dump(mode="json"))
+            yield sse_event("message.completed", {"message": "好的，已取消当前任务。你可以直接告诉我接下来想做什么。"})
+
+        return StreamingResponse(cancelled_event_stream(), media_type="text/event-stream")
+
+    if decision.action == "confirm":
+        async def confirmation_event_stream() -> AsyncIterator[str]:
+            next_state = payload.state.model_copy(
+                update={"active_intent": "worklog", "awaiting_confirmation": True, "missing_fields": []}
+            )
+            yield sse_event("conversation.state", next_state.model_dump(mode="json"))
+            yield sse_event("message.completed", {"message": "你是想根据工作内容或 Git 提交生成一份工作日志吗？"})
+
+        return StreamingResponse(confirmation_event_stream(), media_type="text/event-stream")
+
+    if decision.intent == "worklog":
         history = list(payload.history)
         data_sources = repositories.git_data_sources.list_by_user(current_user.id)
-
-        try:
-            extractor = WorklogIntakeExtractor(get_openai_client())
-        except RuntimeError:
-            extractor = WorklogIntakeExtractor()
+        extractor = WorklogIntakeExtractor(client)
 
         intake = await extractor.extract(
             prompt=payload.prompt.strip(),
             history=history,
             data_sources=data_sources,
-            now=datetime.now().astimezone(),
+            now=datetime.now(ZoneInfo(payload.state.timezone)),
         )
 
         async def worklog_event_stream() -> AsyncIterator[str]:
             if not intake.auto_run:
+                next_state = payload.state.model_copy(
+                    update={
+                        "active_intent": "worklog",
+                        "awaiting_confirmation": False,
+                        "missing_fields": intake.missing_fields,
+                    }
+                )
+                yield sse_event("conversation.state", next_state.model_dump(mode="json"))
                 yield sse_event(
-                    "completed",
+                    "message.completed",
                     {"message": _build_worklog_follow_up_message(intake=intake, has_data_sources=bool(data_sources))},
                 )
                 return
 
-            yield sse_event("widget", _build_worklog_widget_payload(intake=intake))
+            yield sse_event("conversation.state", _cleared_state(payload.state).model_dump(mode="json"))
+            yield sse_event("task.proposed", _build_worklog_proposal_payload(intake=intake))
 
         return StreamingResponse(worklog_event_stream(), media_type="text/event-stream")
 
-    try:
-        service = MixiChatService(get_openai_client())
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="OPENAI_API_KEY is not configured")
+    service = MixiChatService(client)
 
     async def event_stream() -> AsyncIterator[str]:
         full_text = ""
         try:
+            yield sse_event("conversation.state", _cleared_state(payload.state).model_dump(mode="json"))
             async for delta in service.stream_reply(prompt=payload.prompt.strip(), user=current_user):
                 full_text += delta
-                yield sse_event("chunk", {"delta": delta})
-            yield sse_event("completed", {"message": full_text})
+                yield sse_event("message.delta", {"delta": delta})
+            yield sse_event("message.completed", {"message": full_text})
         except Exception as exc:
-            yield sse_event("error", {"detail": str(exc)})
+            yield sse_event("stream.error", {"detail": str(exc)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/mixi/worklog/stream")
+async def stream_worklog_from_mixi(
+    payload: WorklogGenerateRequest,
+    current_user: CurrentUser,
+    repositories: RepositoryDep,
+) -> StreamingResponse:
+    agent = _ensure_worklog_agent(current_user, repositories)
+
+    async def event_stream() -> AsyncIterator[str]:
+        queue: asyncio.Queue[tuple[str, dict[str, object]] | None] = asyncio.Queue()
+
+        async def emit(event: str, data: dict[str, object]) -> None:
+            await queue.put((event, data))
+
+        async def execute() -> None:
+            try:
+                runner = WorklogAgentRunner(repositories)
+                await runner.run(agent=agent, user=current_user, request=payload, event_sink=emit)
+            except Exception:
+                pass
+            finally:
+                await queue.put(None)
+
+        asyncio.create_task(execute())
+
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            event, data = item
+            yield sse_event(event, data)
 
     return StreamingResponse(
         event_stream(),

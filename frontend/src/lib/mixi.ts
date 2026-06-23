@@ -5,7 +5,15 @@ export type MixiHistoryItem = {
   content: string
 }
 
-export type WorklogWidgetDraft = {
+export type MixiConversationState = {
+  conversation_id: string
+  timezone: string
+  active_intent: 'worklog' | null
+  awaiting_confirmation: boolean
+  missing_fields: Array<'data_source' | 'time_range'>
+}
+
+export type WorklogTaskDraft = {
   data_source_id: string | null
   branch: string | null
   start_at: string | null
@@ -16,17 +24,12 @@ export type WorklogWidgetDraft = {
   auto_run: boolean
 }
 
-type MixiStreamHandlers = {
-  onChunk: (delta: string) => void
-  onCompleted?: (message: string) => void
-  onWidget?: (widget: WorklogWidget) => void
-}
-
-export type WorklogWidget = {
-  type: 'worklog_form'
+export type WorklogTaskProposal = {
+  type: 'worklog'
+  capability: 'worklog.generate'
   title: string
   description: string
-  draft: WorklogWidgetDraft
+  draft: WorklogTaskDraft
 }
 
 export type WorklogGenerateInput = {
@@ -48,6 +51,25 @@ export type WorklogGenerateResult = {
   commit_count: number
 }
 
+export type RunStepEvent = {
+  step_key: string
+  step_name: string
+  status: 'running' | 'succeeded' | 'failed'
+  detail?: string
+}
+
+export type MixiStreamEvent =
+  | { type: 'conversation.state'; state: MixiConversationState }
+  | { type: 'message.delta'; delta: string }
+  | { type: 'message.completed'; message: string }
+  | { type: 'task.proposed'; task: WorklogTaskProposal }
+  | { type: 'run.started'; run_id: string; capability: string }
+  | { type: 'run.step'; step: RunStepEvent }
+  | { type: 'artifact.created'; artifact: WorklogGenerateResult }
+  | { type: 'run.failed'; run_id?: string; detail: string }
+
+type StreamEventHandler = (event: MixiStreamEvent) => void
+
 function parseSseEvent(block: string): { event: string; data: string } | null {
   const lines = block.split('\n').map((line) => line.trim()).filter(Boolean)
   if (lines.length === 0) return null
@@ -64,19 +86,41 @@ function parseSseEvent(block: string): { event: string; data: string } | null {
 
 export async function streamMixiReply(
   prompt: string,
-  handlers: MixiStreamHandlers,
+  onEvent: StreamEventHandler,
+  state: MixiConversationState,
   history: MixiHistoryItem[] = [],
 ): Promise<void> {
   const response = await apiFetch('/mixi/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, history }),
+    body: JSON.stringify({ prompt, history, state }),
   })
 
   if (!response.ok || !response.body) {
     const body = (await response.json().catch(() => null)) as { detail?: string } | null
     throw new Error(body?.detail || '请求失败，请稍后重试。')
   }
+
+  await consumeEventStream(response, onEvent)
+}
+
+export async function streamWorklogRun(input: WorklogGenerateInput, onEvent: StreamEventHandler): Promise<void> {
+  const response = await apiFetch('/mixi/worklog/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok || !response.body) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(body?.detail || '工作日志生成失败，请稍后重试。')
+  }
+
+  await consumeEventStream(response, onEvent)
+}
+
+async function consumeEventStream(response: Response, onEvent: StreamEventHandler): Promise<void> {
+  if (!response.body) throw new Error('流式响应不可用。')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -92,42 +136,76 @@ export async function streamMixiReply(
     for (const block of blocks) {
       const parsed = parseSseEvent(block)
       if (!parsed) continue
-      const payload = JSON.parse(parsed.data) as {
-        delta?: string
-        message?: string
-        detail?: string
-        type?: string
-        title?: string
-        description?: string
-        draft?: WorklogWidgetDraft
+      const payload = JSON.parse(parsed.data) as Record<string, unknown>
+      const event = toMixiStreamEvent(parsed.event, payload)
+      if (event.type === 'run.failed') {
+        onEvent(event)
+        continue
       }
-
-      if (parsed.event === 'chunk' && payload.delta) {
-        handlers.onChunk(payload.delta)
-      } else if (parsed.event === 'completed') {
-        handlers.onCompleted?.(payload.message ?? '')
-      } else if (parsed.event === 'widget' && payload.type === 'worklog_form') {
-        handlers.onWidget?.({
-          type: 'worklog_form',
-          title: payload.title ?? '生成工作日志',
-          description: payload.description ?? '补充运行参数后生成工作日志草稿。',
-          draft: payload.draft ?? {
-            data_source_id: null,
-            branch: null,
-            start_at: null,
-            end_at: null,
-            user_prompt: null,
-            non_code_notes: [],
-            missing_fields: [],
-            auto_run: false,
-          },
-        })
-      } else if (parsed.event === 'error') {
-        throw new Error(payload.detail || 'Mixi 流式输出失败。')
-      }
+      onEvent(event)
     }
 
     if (done) break
+  }
+}
+
+function toMixiStreamEvent(event: string, payload: Record<string, unknown>): MixiStreamEvent {
+  if (event === 'conversation.state') return { type: event, state: payload as MixiConversationState }
+  if (event === 'message.delta') return { type: event, delta: String(payload.delta ?? '') }
+  if (event === 'message.completed') return { type: event, message: String(payload.message ?? '') }
+  if (event === 'task.proposed') {
+    return {
+      type: event,
+      task: {
+        type: 'worklog',
+        capability: 'worklog.generate',
+        title: String(payload.title ?? '生成工作日志'),
+        description: String(payload.description ?? '补充运行参数后生成工作日志草稿。'),
+        draft: (payload.draft ?? emptyWorklogDraft()) as WorklogTaskDraft,
+      },
+    }
+  }
+  if (event === 'run.started') {
+    return {
+      type: event,
+      run_id: String(payload.run_id ?? ''),
+      capability: String(payload.capability ?? ''),
+    }
+  }
+  if (event === 'run.step') return { type: event, step: payload as RunStepEvent }
+  if (event === 'artifact.created') {
+    return { type: event, artifact: payload.artifact as WorklogGenerateResult }
+  }
+  if (event === 'run.failed' || event === 'stream.error') {
+    return {
+      type: 'run.failed',
+      run_id: typeof payload.run_id === 'string' ? payload.run_id : undefined,
+      detail: String(payload.detail ?? '任务执行失败，请稍后重试。'),
+    }
+  }
+  throw new Error(`无法识别的流式事件：${event}`)
+}
+
+export function createMixiConversationState(): MixiConversationState {
+  return {
+    conversation_id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    active_intent: null,
+    awaiting_confirmation: false,
+    missing_fields: [],
+  }
+}
+
+function emptyWorklogDraft(): WorklogTaskDraft {
+  return {
+    data_source_id: null,
+    branch: null,
+    start_at: null,
+    end_at: null,
+    user_prompt: null,
+    non_code_notes: [],
+    missing_fields: [],
+    auto_run: false,
   }
 }
 

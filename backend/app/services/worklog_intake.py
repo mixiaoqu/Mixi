@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from app.db.models import GitDataSource
 from app.schemas.mixi import MixiChatHistoryItem
+from app.services.time_range import resolve_named_kind, resolve_time_range
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +114,7 @@ class WorklogIntakeExtractor:
             "data_source_id": "string | empty",
             "repository_hint": "string | empty",
             "branch": "string | empty",
-            "time_range": "today | yesterday | this_week | this_month | custom | unknown",
+            "time_range": "today | yesterday | this_week | last_week | this_month | last_month | custom | unknown",
             "start_at": "ISO8601 string | empty",
             "end_at": "ISO8601 string | empty",
             "user_prompt": "string | empty",
@@ -161,10 +162,7 @@ class WorklogIntakeExtractor:
         return self._extract_with_rules(prompt=prompt, history=history)
 
     def _extract_with_rules(self, *, prompt: str, history: list[MixiChatHistoryItem]) -> dict[str, object]:
-        conversation = [item.content for item in history if item.role == "user"]
         latest = prompt.strip()
-        recent_user_text = [latest, *reversed(conversation)]
-        time_range = detect_latest_time_range(recent_user_text)
 
         notes: list[str] = []
         for marker in ("另外", "还有", "并且", "以及", "补充"):
@@ -175,7 +173,7 @@ class WorklogIntakeExtractor:
                     break
 
         return {
-            "time_range": time_range,
+            "time_range": "unknown",
             "repository_hint": latest,
             "non_code_notes": notes,
             "user_prompt": latest,
@@ -217,29 +215,26 @@ class WorklogIntakeExtractor:
         now: datetime,
     ) -> tuple[datetime | None, datetime | None]:
         current = now.astimezone()
-        latest_rule_range = detect_latest_time_range([prompt, *[item.content for item in reversed(history) if item.role == "user"]])
-        range_kind = latest_rule_range if latest_rule_range != "unknown" else str(extracted.get("time_range") or "unknown")
-        if range_kind == "today":
-            start = datetime.combine(current.date(), time.min, current.tzinfo)
-            return start, current
-        if range_kind == "yesterday":
-            day = current.date() - timedelta(days=1)
-            start = datetime.combine(day, time.min, current.tzinfo)
-            end = datetime.combine(day, time.max, current.tzinfo)
-            return start, end
-        if range_kind == "this_week":
-            monday = current.date() - timedelta(days=current.weekday())
-            start = datetime.combine(monday, time.min, current.tzinfo)
-            return start, current
-        if range_kind == "this_month":
-            first_day = current.date().replace(day=1)
-            start = datetime.combine(first_day, time.min, current.tzinfo)
-            return start, current
+        user_texts = [prompt, *[item.content for item in reversed(history) if item.role == "user"]]
+        resolved = resolve_time_range(user_texts, current)
+        if resolved is not None:
+            return resolved.start_at, resolved.end_at
+
+        range_kind = str(extracted.get("time_range") or "unknown")
+        named = resolve_named_kind(range_kind, current, prompt)
+        if named is not None:
+            return named.start_at, named.end_at
         if range_kind == "custom":
-            start_at = parse_datetime(extracted.get("start_at"))
-            end_at = parse_datetime(extracted.get("end_at"))
+            start_at = normalize_datetime(parse_datetime(extracted.get("start_at")), current)
+            end_at = normalize_datetime(parse_datetime(extracted.get("end_at")), current)
             if start_at and end_at:
-                return start_at, end_at
+                if end_at > current:
+                    if end_at.date() == current.date():
+                        end_at = current
+                    else:
+                        return None, None
+                if start_at < end_at:
+                    return start_at, end_at
         return None, None
 
     def _default_branch_for(self, data_source_id: str | None, data_sources: list[GitDataSource]) -> str | None:
@@ -284,20 +279,6 @@ class WorklogIntakeExtractor:
         return "；".join(parts)
 
 
-def detect_latest_time_range(texts: list[str]) -> str:
-    for text in texts:
-        normalized = text.strip().lower()
-        if "本周" in normalized or "这周" in normalized:
-            return "this_week"
-        if "本月" in normalized or "这个月" in normalized:
-            return "this_month"
-        if "昨天" in normalized:
-            return "yesterday"
-        if "今天" in normalized or "今日" in normalized:
-            return "today"
-    return "unknown"
-
-
 def normalize_notes(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -311,6 +292,14 @@ def parse_datetime(value: object) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def normalize_datetime(value: datetime | None, now: datetime) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=now.tzinfo)
+    return value.astimezone(now.tzinfo)
 
 
 def split_notes(text: str) -> list[str]:

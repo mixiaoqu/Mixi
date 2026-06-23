@@ -11,6 +11,28 @@ from app.tools.base import ToolContext
 from app.tools.git_repository import GitListCommitsInput, GitListCommitsOutput, GitListCommitsTool
 
 
+RunEventSink = Callable[[str, dict[str, object]], Awaitable[None]]
+
+
+async def emit_step_event(
+    event_sink: RunEventSink | None,
+    *,
+    step: object,
+    status: RunStatus,
+    detail: str | None = None,
+) -> None:
+    if event_sink is None:
+        return
+    payload: dict[str, object] = {
+        "step_key": str(getattr(step, "step_key")),
+        "step_name": str(getattr(step, "step_name")),
+        "status": status.value,
+    }
+    if detail:
+        payload["detail"] = detail
+    await event_sink("run.step", payload)
+
+
 class WorklogGraphState(TypedDict, total=False):
     agent_name: str
     request: WorklogGenerateRequest
@@ -30,10 +52,12 @@ def make_request_analysis_node(
     steps: WorkflowRunStepRepository,
     step_id_factory: Callable[[], object],
     llm_enabled: bool,
+    event_sink: RunEventSink | None = None,
 ) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
     async def analyze_request(state: WorklogGraphState) -> WorklogGraphState:
         step = step_id_factory()
         steps.mark_running(step)
+        await emit_step_event(event_sink, step=step, status=RunStatus.running)
         request = state["request"]
         non_code_notes = normalize_non_code_notes(request.non_code_notes)
         report_kind: Literal["daily", "period"] = (
@@ -51,6 +75,7 @@ def make_request_analysis_node(
                 "should_refine": should_refine,
             },
         )
+        await emit_step_event(event_sink, step=step, status=RunStatus.succeeded)
         return {
             "non_code_notes": non_code_notes,
             "report_kind": report_kind,
@@ -65,10 +90,12 @@ def make_git_collection_node(
     git_tool: GitListCommitsTool,
     steps: WorkflowRunStepRepository,
     step_id_factory: Callable[[], object],
+    event_sink: RunEventSink | None = None,
 ) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
     async def collect_git_activity(state: WorklogGraphState) -> WorklogGraphState:
         step = step_id_factory()
         steps.mark_running(step)
+        await emit_step_event(event_sink, step=step, status=RunStatus.running)
         try:
             git_result = await git_tool.execute(state["git_input"], state["tool_context"])
             steps.mark_succeeded(
@@ -79,12 +106,14 @@ def make_git_collection_node(
                     "commit_count": len(git_result.commits),
                 },
             )
+            await emit_step_event(event_sink, step=step, status=RunStatus.succeeded)
             return {
                 "git_result": git_result,
                 "should_refine": state.get("should_refine", False) or bool(git_result.commits),
             }
         except Exception as exc:
             steps.mark_failed(step, error_message=str(exc))
+            await emit_step_event(event_sink, step=step, status=RunStatus.failed, detail=str(exc))
             raise
 
     return collect_git_activity
@@ -94,10 +123,12 @@ def make_worklog_composer_node(
     *,
     steps: WorkflowRunStepRepository,
     step_id_factory: Callable[[], object],
+    event_sink: RunEventSink | None = None,
 ) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
     async def compose_worklog(state: WorklogGraphState) -> WorklogGraphState:
         step = step_id_factory()
         steps.mark_running(step)
+        await emit_step_event(event_sink, step=step, status=RunStatus.running)
         try:
             title, summary, markdown = compose_worklog_markdown(
                 agent_name=state["agent_name"],
@@ -114,9 +145,11 @@ def make_worklog_composer_node(
                     "status": RunStatus.succeeded.value,
                 },
             )
+            await emit_step_event(event_sink, step=step, status=RunStatus.succeeded)
             return {"title": title, "summary": summary, "markdown": markdown}
         except Exception as exc:
             steps.mark_failed(step, error_message=str(exc))
+            await emit_step_event(event_sink, step=step, status=RunStatus.failed, detail=str(exc))
             raise
 
     return compose_worklog
@@ -127,10 +160,12 @@ def make_worklog_refinement_node(
     refiner: WorklogRefiner,
     steps: WorkflowRunStepRepository,
     step_id_factory: Callable[[], object],
+    event_sink: RunEventSink | None = None,
 ) -> Callable[[WorklogGraphState], Awaitable[WorklogGraphState]]:
     async def refine_worklog(state: WorklogGraphState) -> WorklogGraphState:
         step = step_id_factory()
         steps.mark_running(step)
+        await emit_step_event(event_sink, step=step, status=RunStatus.running)
         try:
             refinement = await refiner.refine(
                 WorklogRefinementInput(
@@ -164,6 +199,7 @@ def make_worklog_refinement_node(
                     "refined": True,
                 },
             )
+            await emit_step_event(event_sink, step=step, status=RunStatus.succeeded)
             return {
                 "title": refinement.title,
                 "summary": refinement.summary,
@@ -171,6 +207,7 @@ def make_worklog_refinement_node(
             }
         except Exception as exc:
             steps.mark_failed(step, error_message=str(exc))
+            await emit_step_event(event_sink, step=step, status=RunStatus.failed, detail=str(exc))
             return {}
 
     return refine_worklog

@@ -1,6 +1,6 @@
 import { Icon, type IconName } from '../Icon'
 
-type SidebarItemId = 'home' | 'agents' | 'knowledge' | 'dataSources'
+type SidebarItemId = 'home' | 'agents' | 'runs' | 'knowledge' | 'dataSources'
 
 type SidebarItem = {
   id: SidebarItemId
@@ -20,6 +20,7 @@ type WorkspaceSidebarProps = {
 const items: SidebarItem[] = [
   { id: 'home', label: '对话中心', icon: 'message-square' },
   { id: 'agents', label: '智能体', icon: 'cpu' },
+  { id: 'runs', label: '运行记录', icon: 'terminal' },
   { id: 'knowledge', label: '知识库', icon: 'library' },
   { id: 'dataSources', label: '数据源', icon: 'database' },
 ]

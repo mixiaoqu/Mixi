@@ -1,8 +1,8 @@
-import type { WorklogWidget } from '../../lib/mixi'
+import type { WorklogTaskProposal } from '../../lib/mixi'
 
 export type MixiMessageRole = 'user' | 'assistant' | 'system'
 
-export type MixiMessageKind = 'text' | 'widget'
+export type MixiMessageKind = 'text' | 'task'
 
 export type MixiMessageStatus = 'pending' | 'streaming' | 'done' | 'error'
 
@@ -12,7 +12,7 @@ export type MixiMessage = {
   kind: MixiMessageKind
   status: MixiMessageStatus
   content?: string
-  widget?: WorklogWidget
+  task?: WorklogTaskProposal
 }
 
 export function createUserTextMessage(id: string, content: string): MixiMessage {

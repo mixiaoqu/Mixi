@@ -98,3 +98,22 @@ class WorklogIntakeExtractorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.auto_run)
         self.assertIn("下午的评审会", result.non_code_notes[0])
+
+    async def test_explicit_range_is_not_overridden_by_today(self) -> None:
+        source = SimpleNamespace(
+            id=uuid.uuid4(),
+            name="agent-platform",
+            default_branch="main",
+            repository_url="https://example.com/team/agent-platform.git",
+        )
+        extractor = WorklogIntakeExtractor()
+
+        result = await extractor.extract(
+            prompt="帮我生成15号到今天的工作日志",
+            history=[],
+            data_sources=[source],
+            now=datetime.fromisoformat("2026-06-23T16:30:00+08:00"),
+        )
+
+        self.assertEqual(result.start_at.date().isoformat(), "2026-06-15")
+        self.assertEqual(result.end_at, datetime.fromisoformat("2026-06-23T16:30:00+08:00"))

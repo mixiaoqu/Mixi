@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type Keybo
 
 import type { MixiMessage } from '../../features/mixi/types'
 import { Icon } from '../Icon'
-import WorklogForm from './WorklogForm'
+import WorklogTaskCard from './WorklogForm'
 import './mixi-task-console.css'
 
 type MixiTaskConsoleProps = {
@@ -207,11 +207,11 @@ export default function MixiTaskConsole({
                           </div>
                         ) : null}
 
-                        {message.kind === 'widget' && message.widget ? (
-                          <WorklogForm
-                            title={message.widget.title}
-                            description={message.widget.description}
-                            draft={message.widget.draft}
+                        {message.kind === 'task' && message.task ? (
+                          <WorklogTaskCard
+                            title={message.task.title}
+                            description={message.task.description}
+                            draft={message.task.draft}
                             onOpenDataSources={onOpenDataSources}
                           />
                         ) : message.status === 'error' ? (
