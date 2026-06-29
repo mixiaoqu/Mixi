@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { Icon } from '../components/Icon'
-import WorklogPreview from '../components/mixi/WorklogPreview'
+import WorklogPreview from '../components/mixi/tasks/worklog/WorklogArtifactPreview'
 import { getRun, listRuns, type RunDetail, type RunStatus, type RunSummary } from '../lib/runs'
 
 export default function RunsPage() {

@@ -4,16 +4,22 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
+from app.agent.graph import PlatformGraph
+from app.agent.graph.checkpoint import postgres_checkpointer
 from app.api.routes import router
 from app.core.config import settings
 from app.db.postgres import init_db
+from app.observability.logging import configure_logging
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
+    configure_logging()
     if settings.init_db_on_startup:
         init_db()
-    yield
+    async with postgres_checkpointer() as checkpointer:
+        app.state.platform_graph = PlatformGraph(checkpointer=checkpointer)
+        yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)

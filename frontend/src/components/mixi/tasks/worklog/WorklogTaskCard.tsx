@@ -1,15 +1,15 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent } from 'react'
 
-import type { WorklogTaskDraft } from '../../lib/mixi'
-import { streamWorklogRun, type RunStepEvent, type WorklogGenerateResult } from '../../lib/mixi'
-import { listGitDataSources, type GitDataSource } from '../../lib/gitDataSources'
-import { Icon } from '../Icon'
-import WorklogPreview from './WorklogPreview'
+import type { TaskProposal } from '../../../../features/mixi/types'
+import { listGitDataSources, type GitDataSource } from '../../../../lib/gitDataSources'
+import type { WorklogTaskDraft } from '../../../../lib/mixi'
+import { streamWorklogRun, type RunStepEvent, type WorklogGenerateResult } from '../../../../lib/mixi'
+import { Icon } from '../../../Icon'
+import RunTimeline from '../RunTimeline'
+import WorklogPreview from './WorklogArtifactPreview'
 
 type WorklogTaskCardProps = {
-  title?: string
-  description: string
-  draft?: WorklogTaskDraft
+  task: TaskProposal<WorklogTaskDraft>
   onOpenDataSources: () => void
 }
 
@@ -27,7 +27,8 @@ function notesValueFromDraft(draft?: WorklogTaskDraft) {
   return draft?.non_code_notes?.join('\n') ?? ''
 }
 
-export default function WorklogTaskCard({ title, description, draft, onOpenDataSources }: WorklogTaskCardProps) {
+export default function WorklogTaskCard({ task, onOpenDataSources }: WorklogTaskCardProps) {
+  const draft = task.draft
   const [sources, setSources] = useState<GitDataSource[]>([])
   const [sourceId, setSourceId] = useState(draft?.data_source_id ?? '')
   const [startDate, setStartDate] = useState(dateValueFromIso(draft?.start_at))
@@ -85,8 +86,8 @@ export default function WorklogTaskCard({ title, description, draft, onOpenDataS
 
     const start = new Date(`${startDate}T00:00:00`)
     const end = endDate === localDateValue()
-        ? new Date()
-        : new Date(`${endDate}T23:59:59`)
+      ? new Date()
+      : new Date(`${endDate}T23:59:59`)
     const dateRangeLabel = startDate === endDate ? startDate : `${startDate} 至 ${endDate}`
 
     try {
@@ -162,7 +163,9 @@ export default function WorklogTaskCard({ title, description, draft, onOpenDataS
               <Icon className="h-4 w-4" name="check" />
               工作日志已生成
             </p>
-            <p className="mt-1 text-xs text-emerald-700">读取 {result.commit_count} 条提交，分支 {result.branch}</p>
+            <p className="mt-1 text-xs text-emerald-700">
+              读取 {result.commit_count} 条提交，分支 {result.branch}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg bg-white p-1 ring-1 ring-slate-200" role="group" aria-label="日志查看方式">
@@ -215,8 +218,8 @@ export default function WorklogTaskCard({ title, description, draft, onOpenDataS
           <Icon className="h-4 w-4" name="file" />
         </span>
         <div>
-          <p className="text-sm font-bold text-slate-950">{title ?? '生成工作日志'}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-600">{description}</p>
+          <p className="text-sm font-bold text-slate-950">{task.title || '生成工作日志'}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">{task.description}</p>
         </div>
       </div>
 
@@ -238,17 +241,7 @@ export default function WorklogTaskCard({ title, description, draft, onOpenDataS
           </div>
 
           <div className="mt-4 space-y-2 border-t border-slate-100 pt-4" aria-live="polite">
-            {steps.length === 0 ? (
-              <p className="text-xs font-semibold text-slate-500">正在启动 Agent…</p>
-            ) : steps.map((step) => (
-              <div className="flex items-center gap-2 text-xs" key={step.step_key}>
-                <Icon
-                  className={`h-3.5 w-3.5 ${step.status === 'running' ? 'animate-spin text-indigo-600' : step.status === 'failed' ? 'text-rose-600' : 'text-emerald-600'}`}
-                  name={step.status === 'running' ? 'loader' : step.status === 'failed' ? 'x' : 'check'}
-                />
-                <span className={step.status === 'running' ? 'font-bold text-slate-800' : 'font-semibold text-slate-600'}>{step.step_name}</span>
-              </div>
-            ))}
+            <RunTimeline emptyLabel="正在启动 Agent..." steps={steps} />
           </div>
         </div>
       ) : sources.length === 0 ? (

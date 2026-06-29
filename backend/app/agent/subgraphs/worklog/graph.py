@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.nodes import (
+from app.agent.subgraphs.worklog.nodes import (
     RunEventSink,
     WorklogGraphState,
     make_git_collection_node,
@@ -17,13 +17,13 @@ from app.db.models import Agent, RunStatus, User
 from app.db.repositories import Repositories
 from app.schemas.worklog import WorklogCommitRead, WorklogGenerateRequest, WorklogGenerateResponse
 from app.services.worklog_refiner import OpenAIWorklogRefiner, WorklogRefiner
-from app.tools.base import ToolContext, ToolError
-from app.tools.git_repository import GitListCommitsInput, GitListCommitsTool
+from app.tools.agent.base import ToolContext, ToolError
+from app.tools.agent.git_inspect import GitListCommitsInput, GitListCommitsTool
 
 _DEFAULT_REFINER = object()
 
 
-class WorklogAgentRunner:
+class WorklogGraph:
     def __init__(
         self,
         repositories: Repositories,

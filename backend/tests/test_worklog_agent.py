@@ -7,10 +7,10 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from app.agents.graph import WorklogAgentRunner
+from app.agent.subgraphs.worklog import WorklogGraph
 from app.services.worklog_refiner import WorklogRefinementInput, WorklogRefinementResult
-from app.tools.base import ToolExecutionError
-from app.tools.git_repository import GitCommitResult, GitListCommitsOutput
+from app.tools.agent.base import ToolExecutionError
+from app.tools.agent.git_inspect import GitCommitResult, GitListCommitsOutput
 from app.schemas.worklog import WorklogGenerateRequest
 
 
@@ -44,7 +44,7 @@ class FakeWorklogRefiner:
         )
 
 
-class WorklogAgentRunnerTests(unittest.TestCase):
+class WorklogGraphTests(unittest.TestCase):
     def setUp(self) -> None:
         self.run = SimpleNamespace(id=uuid.uuid4(), output_payload={})
         self.steps_created: list[SimpleNamespace] = []
@@ -96,7 +96,7 @@ class WorklogAgentRunnerTests(unittest.TestCase):
                 )
             ],
         )
-        runner = WorklogAgentRunner(self.repositories, git_tool=FakeGitTool(result=git_result), llm_refiner=None)
+        runner = WorklogGraph(self.repositories, git_tool=FakeGitTool(result=git_result), llm_refiner=None)
 
         response = asyncio.run(runner.run(agent=self.agent, user=self.user, request=self.request))
 
@@ -130,7 +130,7 @@ class WorklogAgentRunnerTests(unittest.TestCase):
                 markdown="# 2026-06-21 工作日志\n\n优化后的内容",
             )
         )
-        runner = WorklogAgentRunner(
+        runner = WorklogGraph(
             self.repositories,
             git_tool=FakeGitTool(result=git_result),
             llm_refiner=refiner,
@@ -151,7 +151,7 @@ class WorklogAgentRunnerTests(unittest.TestCase):
             commits=[],
         )
         refiner = FakeWorklogRefiner(error=RuntimeError("refiner unavailable"))
-        runner = WorklogAgentRunner(
+        runner = WorklogGraph(
             self.repositories,
             git_tool=FakeGitTool(result=git_result),
             llm_refiner=refiner,
@@ -164,7 +164,7 @@ class WorklogAgentRunnerTests(unittest.TestCase):
         self.workflow_runs.mark_succeeded.assert_called_once()
 
     def test_run_marks_workflow_failed_when_tool_errors(self) -> None:
-        runner = WorklogAgentRunner(
+        runner = WorklogGraph(
             self.repositories,
             git_tool=FakeGitTool(error=ToolExecutionError("Git 数据源当前不可用")),
             llm_refiner=None,

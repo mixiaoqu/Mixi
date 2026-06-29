@@ -8,11 +8,11 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from app.api.auth import CurrentUser
 from app.api.deps import RepositoryDep
 from app.api.permissions import require_workspace_access, require_workspace_editor
-from app.agents.graph import WorklogAgentRunner
 from app.db.models import AgentStatus
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
 from app.schemas.common import Page
 from app.schemas.worklog import WorklogGenerateRequest, WorklogGenerateResponse
+from app.agent.subgraphs.worklog import WorklogGraph
 
 
 router = APIRouter(tags=["agents"])
@@ -92,5 +92,5 @@ async def run_worklog_agent(
     if agent.status in {AgentStatus.paused, AgentStatus.archived}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Agent is not available for execution")
 
-    runner = WorklogAgentRunner(repositories)
+    runner = WorklogGraph(repositories)
     return await runner.run(agent=agent, user=current_user, request=payload)

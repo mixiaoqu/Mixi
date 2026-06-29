@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.db.repositories import Repositories
-from app.tools.base import AgentTool
-from app.tools.git_repository import GitListCommitsTool
+from app.tools.agent.base import AgentTool
+from app.tools.agent.git_inspect import GitListCommitsTool
 
 
 ToolFactory = Callable[[Repositories], AgentTool]

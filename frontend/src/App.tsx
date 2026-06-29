@@ -159,6 +159,27 @@ export default function App() {
               current.map((message) =>
                 message.id === assistantMessageId
                   ? { ...message, kind: 'task', task: event.task, content: undefined, status: 'done' }
+                : message,
+              ),
+            )
+          } else if (event.type === 'artifact.created') {
+            setMixiMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      kind: 'artifact',
+                      artifact: {
+                        id: event.artifact.workflow_run_id,
+                        capability: 'worklog.generate',
+                        artifactType: 'worklog',
+                        title: event.artifact.title,
+                        summary: event.artifact.summary,
+                        payload: event.artifact,
+                      },
+                      content: undefined,
+                      status: 'done',
+                    }
                   : message,
               ),
             )

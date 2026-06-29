@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.db.repositories.git_data_source import GitDataSourceRepository
 from app.services.git_remote import GitConnectionError, decrypt_credential, list_remote_commits
-from app.tools.base import AgentTool, ToolContext, ToolExecutionError, ToolPermissionError
+from app.tools.agent.base import AgentTool, ToolContext, ToolExecutionError, ToolPermissionError
 
 logger = logging.getLogger(__name__)
 

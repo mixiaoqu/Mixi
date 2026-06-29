@@ -1,3 +1,4 @@
+import type { TaskProposal } from '../features/mixi/types'
 import { apiFetch } from './auth'
 
 export type MixiHistoryItem = {
@@ -8,9 +9,10 @@ export type MixiHistoryItem = {
 export type MixiConversationState = {
   conversation_id: string
   timezone: string
-  active_intent: 'worklog' | null
+  active_intent: string | null
   awaiting_confirmation: boolean
-  missing_fields: Array<'data_source' | 'time_range'>
+  missing_fields: string[]
+  checkpoint_thread_id: string | null
 }
 
 export type WorklogTaskDraft = {
@@ -24,12 +26,9 @@ export type WorklogTaskDraft = {
   auto_run: boolean
 }
 
-export type WorklogTaskProposal = {
+export type WorklogTaskProposal = TaskProposal<WorklogTaskDraft> & {
   type: 'worklog'
   capability: 'worklog.generate'
-  title: string
-  description: string
-  draft: WorklogTaskDraft
 }
 
 export type WorklogGenerateInput = {
@@ -138,10 +137,6 @@ async function consumeEventStream(response: Response, onEvent: StreamEventHandle
       if (!parsed) continue
       const payload = JSON.parse(parsed.data) as Record<string, unknown>
       const event = toMixiStreamEvent(parsed.event, payload)
-      if (event.type === 'run.failed') {
-        onEvent(event)
-        continue
-      }
       onEvent(event)
     }
 
@@ -154,6 +149,7 @@ function toMixiStreamEvent(event: string, payload: Record<string, unknown>): Mix
   if (event === 'message.delta') return { type: event, delta: String(payload.delta ?? '') }
   if (event === 'message.completed') return { type: event, message: String(payload.message ?? '') }
   if (event === 'task.proposed') {
+    const draft = (payload.draft ?? emptyWorklogDraft()) as WorklogTaskDraft
     return {
       type: event,
       task: {
@@ -161,7 +157,10 @@ function toMixiStreamEvent(event: string, payload: Record<string, unknown>): Mix
         capability: 'worklog.generate',
         title: String(payload.title ?? '生成工作日志'),
         description: String(payload.description ?? '补充运行参数后生成工作日志草稿。'),
-        draft: (payload.draft ?? emptyWorklogDraft()) as WorklogTaskDraft,
+        draft,
+        missingFields: draft.missing_fields,
+        confirmationRequired: true,
+        status: 'proposed',
       },
     }
   }
@@ -193,6 +192,7 @@ export function createMixiConversationState(): MixiConversationState {
     active_intent: null,
     awaiting_confirmation: false,
     missing_fields: [],
+    checkpoint_thread_id: null,
   }
 }
 

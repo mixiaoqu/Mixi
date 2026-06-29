@@ -117,3 +117,23 @@ class WorklogIntakeExtractorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.start_at.date().isoformat(), "2026-06-15")
         self.assertEqual(result.end_at, datetime.fromisoformat("2026-06-23T16:30:00+08:00"))
+
+    async def test_rule_extractor_resolves_this_two_weeks(self) -> None:
+        source = SimpleNamespace(
+            id=uuid.uuid4(),
+            name="agent-platform",
+            default_branch="main",
+            repository_url="https://example.com/team/agent-platform.git",
+        )
+        extractor = WorklogIntakeExtractor()
+
+        result = await extractor.extract(
+            prompt="帮我生成这两周的日志",
+            history=[],
+            data_sources=[source],
+            now=datetime.fromisoformat("2026-06-30T10:00:00+08:00"),
+        )
+
+        self.assertTrue(result.auto_run)
+        self.assertEqual(result.start_at.date().isoformat(), "2026-06-17")
+        self.assertEqual(result.end_at, datetime.fromisoformat("2026-06-30T10:00:00+08:00"))

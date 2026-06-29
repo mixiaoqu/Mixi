@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator
@@ -21,9 +20,10 @@ class MixiChatRequest(BaseModel):
 class MixiConversationState(BaseModel):
     conversation_id: uuid.UUID = Field(default_factory=uuid.uuid4)
     timezone: str = Field(default="UTC", max_length=64)
-    active_intent: Literal["worklog"] | None = None
+    active_intent: str | None = Field(default=None, max_length=120)
     awaiting_confirmation: bool = False
-    missing_fields: list[Literal["data_source", "time_range"]] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
+    checkpoint_thread_id: str | None = Field(default=None, max_length=160)
 
     @field_validator("timezone")
     @classmethod

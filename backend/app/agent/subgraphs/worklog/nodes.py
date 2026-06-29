@@ -7,8 +7,8 @@ from app.db.models import RunStatus
 from app.db.repositories.workflow import WorkflowRunStepRepository
 from app.schemas.worklog import WorklogGenerateRequest
 from app.services.worklog_refiner import WorklogRefinementInput, WorklogRefinementResult, WorklogRefiner
-from app.tools.base import ToolContext
-from app.tools.git_repository import GitListCommitsInput, GitListCommitsOutput, GitListCommitsTool
+from app.tools.agent.base import ToolContext
+from app.tools.agent.git_inspect import GitListCommitsInput, GitListCommitsOutput, GitListCommitsTool
 
 
 RunEventSink = Callable[[str, dict[str, object]], Awaitable[None]]

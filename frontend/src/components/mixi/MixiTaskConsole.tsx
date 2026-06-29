@@ -2,7 +2,8 @@ import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type Keybo
 
 import type { MixiMessage } from '../../features/mixi/types'
 import { Icon } from '../Icon'
-import WorklogTaskCard from './WorklogForm'
+import TaskCardHost from './tasks/TaskCardHost'
+import WorklogArtifactCard from './tasks/worklog/WorklogArtifactCard'
 import './mixi-task-console.css'
 
 type MixiTaskConsoleProps = {
@@ -167,11 +168,11 @@ export default function MixiTaskConsole({
       <div className={`mixi-scene ${conversationMode ? 'mixi-scene--conversation' : ''}`}>
         <div className={`mixi-idle-shell ${conversationMode ? 'mixi-idle-shell--hidden' : ''}`}>
           <div className="mx-auto max-w-3xl text-center">
-            <h1 className="text-balance text-4xl font-bold tracking-[-0.03em] text-slate-950 sm:text-5xl">
+            <h1 className="text-balance text-4xl font-bold text-slate-950 sm:text-5xl">
               Mixi，今天想完成什么？
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              直接输入目标，或从最近的工作流开始，Mixi 会先给出实时反馈。
+              直接输入目标，或从最近的工作流开始。Mixi 会先给出实时反馈。
             </p>
           </div>
         </div>
@@ -207,18 +208,18 @@ export default function MixiTaskConsole({
                           </div>
                         ) : null}
 
-                        {message.kind === 'task' && message.task ? (
-                          <WorklogTaskCard
-                            title={message.task.title}
-                            description={message.task.description}
-                            draft={message.task.draft}
+                        {message.kind === 'artifact' && message.artifact ? (
+                          <WorklogArtifactCard artifact={message.artifact} />
+                        ) : message.kind === 'task' && message.task ? (
+                          <TaskCardHost
+                            task={message.task}
                             onOpenDataSources={onOpenDataSources}
                           />
                         ) : message.status === 'error' ? (
                           <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{message.content}</p>
                         ) : (
                           <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
-                            {message.content || 'Mixi 正在组织回复…'}
+                            {message.content || 'Mixi 正在组织回复...'}
                           </p>
                         )}
                       </div>
@@ -277,7 +278,7 @@ export default function MixiTaskConsole({
                 onChange={(event) => setPrompt(event.target.value)}
                 onFocus={() => setFocused(true)}
                 onKeyDown={handleKeyDown}
-                placeholder={conversationMode ? '继续追问，或输入新的任务…' : '例如：帮我生成今天的工作日志'}
+                placeholder={conversationMode ? '继续追问，或输入新的任务...' : '例如：帮我生成今天的工作日志'}
                 value={prompt}
               />
 

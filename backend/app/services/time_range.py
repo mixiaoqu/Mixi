@@ -98,6 +98,7 @@ def resolve_named_kind(kind: str, now: datetime, source_text: str = "") -> Resol
         "last_week": "上周",
         "this_month": "本月",
         "last_month": "上个月",
+        "last_2_weeks": "这两周",
     }
     text_value = aliases.get(kind)
     return _resolve_named_period(text_value, now.astimezone(), source_text or text_value) if text_value else None
@@ -105,6 +106,9 @@ def resolve_named_kind(kind: str, now: datetime, source_text: str = "") -> Resol
 
 def _resolve_named_period(normalized: str, now: datetime, source_text: str) -> ResolvedTimeRange | None:
     current_day = now.date()
+    if "这两周" in normalized or "本两周" in normalized:
+        start = current_day - timedelta(days=13)
+        return _build_range(start, now, now, source_text, "最近两周")
     if "本周" in normalized or "这周" in normalized:
         start = current_day - timedelta(days=current_day.weekday())
         return _build_range(start, now, now, source_text, "本周截至今天")

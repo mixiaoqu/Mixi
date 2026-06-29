@@ -9,8 +9,8 @@ from unittest.mock import Mock, patch
 from pydantic import ValidationError
 
 from app.services.git_remote import GIT_OUTPUT_ENCODING, GitCommit, _run_git, list_remote_commits
-from app.tools.base import ToolContext, ToolPermissionError
-from app.tools.git_repository import GitListCommitsInput, GitListCommitsTool
+from app.tools.agent.base import ToolContext, ToolPermissionError
+from app.tools.agent.git_inspect import GitListCommitsInput, GitListCommitsTool
 
 
 class GitListCommitsInputTests(TestCase):
@@ -75,7 +75,7 @@ class GitListCommitsToolTests(IsolatedAsyncioTestCase):
             subject="Add Git tool",
         )
 
-        with patch("app.tools.git_repository.list_remote_commits", return_value=[commit]):
+        with patch("app.tools.agent.git_inspect.list_remote_commits", return_value=[commit]):
             result = await tool.execute(payload, context)
 
         self.assertEqual(result.repository_name, "agent-platform")
